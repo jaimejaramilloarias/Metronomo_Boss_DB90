@@ -22,13 +22,13 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 ---
 
 ## Épica 1 · Control de velocidad (BPM)
-- **T1.1 UI BPM**  
-  - Añadir input numérico (30–250), slider y botones ±1/±5 alineados con la estética.  
+- [x] **T1.1 UI BPM**
+  - Añadir input numérico (30–250), slider y botones ±1/±5 alineados con la estética.
   - Conectar estados iniciales desde el valor actual.
-- **T1.2 Integración lógica**  
-  - Sincronizar cambios de cualquier control hacia display 7-seg y audio engine inmediatamente.  
+- [x] **T1.2 Integración lógica**
+  - Sincronizar cambios de cualquier control hacia display 7-seg y audio engine inmediatamente.
   - Mantener atajos de teclado (flechas, Enter, Space, L) y probar colisiones de eventos.
-- **T1.3 Feedback visual**  
+- [x] **T1.3 Feedback visual**
   - Asegurar highlight/LED al estar bloqueado (Lock) y estados coherentes.
 
 > Criterio de salida: control de BPM 100% funcional y accesible.
