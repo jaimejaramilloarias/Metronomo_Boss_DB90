@@ -5,9 +5,12 @@ const BUNDLED_BASE = '../assets';
 const hasViteEnv = typeof import.meta !== 'undefined' && 'env' in import.meta;
 const isViteDev = hasViteEnv && import.meta.env.DEV;
 const isViteProdBundle = hasViteEnv && import.meta.env.PROD;
+
+const resolveFromModule = (path) => new URL(path, import.meta.url).href;
+const sourceUrl = resolveFromModule(SOURCE_PATH);
 const fallbackBase = isViteProdBundle ? BUNDLED_BASE : STANDALONE_BASE;
-const fallbackStyle = `${fallbackBase}/main.css`;
-const fallbackEntry = `${fallbackBase}/main.js`;
+const fallbackStyle = resolveFromModule(`${fallbackBase}/main.css`);
+const fallbackEntry = resolveFromModule(`${fallbackBase}/main.js`);
 
 const ensureFallbackStyle = () => {
   if (document.querySelector(`link[data-fallback-style="${fallbackStyle}"]`)) {
@@ -29,7 +32,7 @@ const attemptSourceImport = async () => {
   let shouldAttemptImport = true;
 
   try {
-    const headResponse = await fetch(SOURCE_PATH, { method: 'HEAD' });
+    const headResponse = await fetch(sourceUrl, { method: 'HEAD' });
     if (headResponse.ok) {
       const contentType = headResponse.headers.get('content-type') || '';
       if (/javascript|ecmascript/i.test(contentType)) {
