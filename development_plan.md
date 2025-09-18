@@ -8,13 +8,13 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 ---
 
 ## Épica 0 · Preparación y base
-- **T0.1 Auditoría de estado actual**  
-  - Inventariar controles existentes y sus atajos.  
-  - Revisar cómo se manipula BPM, audio engine y patrón actual.  
+- [x] **T0.1 Auditoría de estado actual** _(ver Apéndice · Resultados Épica 0)_
+  - Inventariar controles existentes y sus atajos.
+  - Revisar cómo se manipula BPM, audio engine y patrón actual.
   - Mapear estructura CSS/JS en `index.html` para localizar secciones relevantes.
-- **T0.2 Infraestructura de tooltips**  
-  - Evaluar si ya existe utilería reutilizable.  
-  - Definir API de tooltip custom (atributos data-, eventos pointer/focus/blur).  
+- [x] **T0.2 Infraestructura de tooltips** _(ver Apéndice · Resultados Épica 0)_
+  - Evaluar si ya existe utilería reutilizable.
+  - Definir API de tooltip custom (atributos data-, eventos pointer/focus/blur).
   - Planificar estilos reusables y accesibles.
 
 > Entregable: documentación breve con conclusiones que orienten las épicas siguientes.
@@ -125,9 +125,68 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 - **T8.2 Refactor CSS/HTML**  
   - Aplicar `flex-wrap`, `gap`, `grid` donde sea necesario manteniendo estética retro.  
   - Alinear alturas/padding de inputs y botones.
-- **T8.3 Pruebas responsive**  
-  - Validar en anchos clave (320px, 375px, 768px, 1024px).  
+- **T8.3 Pruebas responsive**
+  - Validar en anchos clave (320px, 375px, 768px, 1024px).
   - Asegurar que tooltips y controles siguen accesibles.
+
+---
+
+## Apéndice · Resultados Épica 0 (Preparación)
+
+### T0.1 Auditoría de estado actual
+
+- **Inventario de controles y atajos**
+  - **AppBar/tema**: Indicador LED del engine y selector de tema (GREEN/AMBER). Sin atajos; ambos botones escriben `theme`.
+  - **Transporte (TEMPO)**: botón Start/Stop (`running`, atajo Enter), Tap (`tap()`, atajo Space), Lock (`tempoLocked`, atajo L). La nota `↑↓ ±1 • ←→ ±5` resume atajos globales para BPM.
+  - **Display BPM**: 7-segmentos + barra LED muestran el valor actual (`bpm`) y `currentBeat`; no hay entrada directa.
+  - **Mixer**: slider maestro (`volume`) y tres sliders de mezcla (`volumes.accent/beat/sub`). Selector `soundProfile` (beep, click, woodblock, cowbell, voice).
+  - **Meter**: número de beats por compás (`beatsPerBar`, 1-16), subdivisión (`stepsPerBeat`, ♩/♪/♩3/ᶿ), swing (`swing`, 0-0.75), count-in (`countInBars`, 0-8) y conmutador de conteo por voz (`voiceCount`).
+  - **Accents**: cuadrícula de botones 1..N que ciclan Off→Beat→Accent actualizando `accentMap` (el primer beat siempre fuerza acento).
+  - **Coach**: modos OFF/TIMECHECK/QUIET/GRADUAL (`coachMode`). `QUIET` expone `muteEvery`; `GRADUAL` habilita `gradualFrom`, `gradualTo`, `gradualBars` (afectan BPM cuando `running`).
+  - **Pattern**: toggle `seqEnabled`, select `seqMode` (REP/ADD), cat./patrón desde `patternLib`, acciones Cargar/Clear y 16 pasos que alteran `stepPattern` (normalizado con `flattenTo16`).
+  - **Tone**: checkbox `toneOn`, slider `a4` (438-445 Hz) y slider de nota `toneNote` (24-95) que actualiza la etiqueta `{NOTE_NAMES}`.
+  - **Presets**: input `presetName`, guardar (`savePreset`), export (`exportPresets`), import (`importPresets`). Panel Setlist usa el mismo input para añadir entradas y botones ⤴︎/✕ para cargar o eliminar (`loadPreset`, `removeFromSetlist`).
+  - **Atajos globales adicionales**: ArrowUp/Down ±1 BPM, ArrowRight/Left ±5 BPM definidos en `useEffect` (keydown).
+
+- **Gestión del BPM**
+  - `bpm` inicia en 120. Cambia vía `setBpm` desde hotkeys, `tap()` (promedia últimos 6 intervalos y respeta `tempoLocked`), carga de presets/setlist, y el modo `gradual` (interpola entre `gradualFrom`/`gradualTo` en `onBar`).
+  - `tempoLocked` detiene la programación del motor (`useMetronomeEngine` retorna temprano) y bloquea actualizaciones del tap.
+  - Los límites de BPM están normalizados con `clamp(..., 30, 250)` en todos los flujos.
+
+- **Motor de audio actual**
+  - `useMetronomeEngine` inicializa un `AudioContext`, programa eventos con `requestAnimationFrame` y adelanto de 120 ms (`scheduleAhead`).
+  - Calcula tipo de golpe (`accent/beat/sub`) según `accentMap`, `stepsPerBeat` y `beatsPerBar`; el `swing` altera duraciones impar/par.
+  - El perfil sonoro controla oscilador (`osc.type`) y frecuencias base; la mezcla usa `volumes.{accent,beat,sub}`. `voiceCount` dispara `speechSynthesis` para beats/accentos.
+  - `countInBars` (o 0 en modo quiet) evita reproducir golpes hasta concluir el conteo. `tempoLocked` impide arrancar el loop de programación.
+  - Secuenciador: con `seqEnabled`, `currentSeq` adapta `stepPattern` al total de pasos (`stepsPerBeat*beatsPerBar`). `seqMode==='replace'` silencia downbeats inactivos; `add` respeta beats base.
+  - `useMIDIClock` publica mensajes 0xF8/0xFA/0xFC cuando hay salidas MIDI.
+
+- **Estructura CSS/JS relevante**
+  - `index.html` monta `#root` y carga `src/bootstrap.js`, que intenta importar `main.jsx` (modo Vite) y cae a `standalone/assets` en producción empaquetada.
+  - `src/main.jsx` renderiza `<App/>` con `ReactDOM.createRoot`; `App.jsx` delega en `DB90InspiredMockup`.
+  - La UI está centralizada en `src/mockup_web_tipo_boss_db_90_inspirado.jsx`, que define utilidades (clamp, noteToHz, flattenTo16), hooks (`useMetronomeEngine`, `useTone`, `useMIDIClock`) y el árbol de componentes Tailwind-like (clases utilitarias en línea). `src/index.css` solo declara Tailwind base + ajustes globales.
+
+- **Conclusiones**
+  - El BPM carece de controles directos (input/slider) y depende de hotkeys/tap/presets, lo que da contexto a Épica 1.
+  - Los tooltips actuales usan atributos `title`, sin estructura accesible consistente.
+  - `stepPattern` está normalizado a 16 pasos, por lo que futuras ampliaciones deberán considerar migraciones para soportar longitudes variables.
+
+### T0.2 Infraestructura de tooltips
+
+- **Estado actual**
+  - Todos los elementos con ayuda rápida usan `title="..."`, lo que limita formato, accesibilidad (no aparece en foco teclado en la mayoría de navegadores) y consistencia visual con la estética retro.
+
+- **Propuesta de utilería**
+  1. **API declarativa**: exponer un componente `<Tooltip>` o helper `withTooltip` que acepte props `{ id?, label, placement?, delay? }` y reciba el trigger vía children/render prop. Alternativa sin JSX: atributos `data-tooltip` + `data-tooltip-placement` manejados por un hook global.
+  2. **Gestión centralizada**: crear un `TooltipProvider` que inserte un contenedor flotante (portal en `document.body`). Escuchar `pointerenter`, `pointerleave`, `focus`, `blur` y gestos touch (tap rápido → mostrar 2 s). Para touch prolongado, permitir cerrar en segundo tap.
+  3. **Accesibilidad**: cuando el trigger recibe foco, asignar `aria-describedby` y renderizar `role="tooltip"` con IDs únicos. Mantener contraste ≥ 4.5:1 y respetar `prefers-reduced-motion` (mostrar/ocultar sin animaciones complejas).
+  4. **Estilos reutilizables**: definir tokens en CSS (`.tooltip` con fondo `#0f172a`, borde `var(--acc)` opcional, texto 11px). Usar Tailwind `@apply` en `index.css` o módulo dedicado para mantener coherencia retro.
+  5. **Integración incremental**: remplazar `title` por el helper en bloques priorizados (Transporte/BPM → Coach → Pattern → Presets). Mantener fallback `title` durante transición si es necesario.
+
+- **Siguientes pasos sugeridos**
+  - Implementar `TooltipProvider` + hook `useTooltipAnchor(ref, options)` en Épica 2.
+  - Añadir pruebas ligeras (React Testing Library) para verificar apertura por foco/teclado y cierre por `Escape`.
+  - Documentar la convención (`data-tooltip-id`, `aria-describedby`) para futuras contribuciones.
 
 ---
 
