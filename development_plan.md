@@ -41,8 +41,8 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
   - Soportar focus/blur y toque (toggle temporal).
   - ✅ `TooltipProvider` centraliza listeners (`pointer`, `focus`, `touch`, `Escape`) y renderiza un overlay accesible via portal con `aria-describedby` automático.
   - ✅ Helper `tooltipProps`/`useTooltipAnchor` permiten añadir atributos declarativos.
-- **T2.2 Cobertura total**
-  - Añadir tooltips a todos los controles visibles (Tap, Lock, perfiles, sliders, patrones, presets, tono, Coach, etc.).  
+- [x] **T2.2 Cobertura total**
+  - Añadir tooltips a todos los controles visibles (Tap, Lock, perfiles, sliders, patrones, presets, tono, Coach, etc.).
   - Revisar contraste y posición responsive.
 - **T2.3 QA accesibilidad**  
   - Validar que no interfiera con navegadores touch.  
