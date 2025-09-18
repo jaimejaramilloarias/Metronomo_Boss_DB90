@@ -108,6 +108,114 @@ const COACH_TOOLTIPS = {
   gradual: "Gradual Tempo: interpola BPM",
 };
 
+const SOUND_PROFILES = {
+  beep: {
+    envelope: {
+      default: { attack: 0.002, decay: 0.12, sustain: 0.001 },
+      accent: { decay: 0.16 },
+    },
+    oscillators: [
+      {
+        type: "sine",
+        freq: { accent: 2100, beat: 1720, sub: 1280 },
+        pitchEnv: { ratio: 0.9, duration: 0.05 },
+      },
+      {
+        type: "sine",
+        freq: { accent: 2100, beat: 1720, sub: 1280 },
+        gain: 0.22,
+        detune: 12,
+        pitchEnv: { ratio: 0.96, duration: 0.05 },
+      },
+    ],
+  },
+  click: {
+    envelope: {
+      default: { attack: 0.0005, decay: 0.05, sustain: 0.001 },
+    },
+    oscillators: [
+      {
+        type: "square",
+        freq: { accent: 5000, beat: 4400, sub: 3800 },
+        gain: { accent: 0.7, beat: 0.6, sub: 0.5 },
+      },
+      {
+        type: "triangle",
+        freq: { accent: 1800, beat: 1600, sub: 1400 },
+        gain: 0.35,
+        pitchEnv: { ratio: 0.4, duration: 0.03 },
+      },
+    ],
+    noise: {
+      gain: { accent: 0.7, beat: 0.6, sub: 0.45 },
+      filter: { type: "highpass", frequency: 3200, Q: 0.9 },
+      decay: 0.03,
+    },
+  },
+  woodblock: {
+    envelope: {
+      default: { attack: 0.001, decay: 0.18, sustain: 0.0006 },
+    },
+    filter: { type: "bandpass", frequency: { accent: 1400, beat: 1240, sub: 1100 }, Q: 12 },
+    oscillators: [
+      {
+        type: "triangle",
+        freq: { accent: 960, beat: 860, sub: 760 },
+        pitchEnv: { ratio: 0.6, duration: 0.08 },
+      },
+      {
+        type: "sine",
+        freq: { accent: 1920, beat: 1720, sub: 1480 },
+        gain: 0.38,
+        pitchEnv: { ratio: 0.72, duration: 0.06 },
+      },
+    ],
+  },
+  cowbell: {
+    envelope: {
+      default: { attack: 0.001, decay: 0.25, sustain: 0.0008 },
+    },
+    filter: { type: "bandpass", frequency: { accent: 1080, beat: 980, sub: 900 }, Q: 9 },
+    oscillators: [
+      {
+        type: "square",
+        freq: { accent: 760, beat: 720, sub: 680 },
+        pitchEnv: { ratio: 1.18, duration: 0.12, mode: "linear" },
+      },
+      {
+        type: "square",
+        freq: { accent: 1220, beat: 1140, sub: 1060 },
+        gain: 0.58,
+        pitchEnv: { ratio: 1.05, duration: 0.1, mode: "linear" },
+      },
+    ],
+  },
+  voice: {
+    envelope: {
+      default: { attack: 0.002, decay: 0.16, sustain: 0.001 },
+    },
+    oscillators: [
+      {
+        type: "sine",
+        freq: { accent: 880, beat: 760, sub: 620 },
+        gain: { accent: 0.45, beat: 0.35, sub: 0.25 },
+        pitchEnv: { ratio: 0.85, duration: 0.07 },
+      },
+    ],
+    speak: true,
+  },
+};
+
+const resolveByType = (value, type) => {
+  if (value == null) return undefined;
+  if (typeof value === "number") return value;
+  if (typeof value === "object") {
+    if (value[type] != null) return value[type];
+    if (value.default != null) return value.default;
+  }
+  return undefined;
+};
+
 /* -------------------- Self-tests -------------------- */
 function runSelfTests() {
   try {
@@ -164,14 +272,129 @@ function useMetronomeEngine({
 }) {
   const ctxRef = useRef(null), nextTimeRef = useRef(0), stepRef = useRef(0), rafRef = useRef(null);
   const countingInRef = useRef(countInBars);
+  const noiseBufferRef = useRef(null);
   const say = (text) => { try { if (!voiceCount) return; const u = new window.SpeechSynthesisUtterance(String(text)); u.lang='es-ES'; u.rate=1; u.pitch=1; u.volume=1; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);} catch(_){} };
+  const ensureNoiseBuffer = () => {
+    const ctx = ctxRef.current; if (!ctx) return null;
+    if (!noiseBufferRef.current) {
+      const duration = 0.2;
+      const sampleRate = ctx.sampleRate || 44100;
+      const length = Math.max(1, Math.floor(sampleRate * duration));
+      const buffer = ctx.createBuffer(1, length, sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < length; i += 1) { data[i] = Math.random() * 2 - 1; }
+      noiseBufferRef.current = buffer;
+    }
+    return noiseBufferRef.current;
+  };
   const scheduleClick = (time, type, idxInBar) => {
-    const ctx = ctxRef.current; if (!ctx) return; const profile = soundProfile;
-    let freq = 1400; const dur = 0.03; let gainLevel = volumes.sub; if (type==='beat') { gainLevel=volumes.beat; freq=1700; } if (type==='accent') { gainLevel=volumes.accent; freq=2000; }
-    const outGain = ctx.createGain(); outGain.gain.setValueAtTime(gainLevel, time); outGain.gain.exponentialRampToValueAtTime(0.0001, time+dur); outGain.connect(ctx.destination);
-    const osc = ctx.createOscillator(); const shaper = ctx.createGain(); osc.type = (profile==='click')?'square': (profile==='woodblock')?'triangle':'sine'; if (profile==='cowbell') { osc.type='square'; freq=freq*0.6; } if (profile==='woodblock') { freq=freq*0.5; } if (profile==='click') { freq=freq*1.2; }
-    osc.frequency.setValueAtTime(freq, time); shaper.gain.setValueAtTime(1, time); shaper.gain.exponentialRampToValueAtTime(0.0001, time+dur); osc.connect(shaper); shaper.connect(outGain); osc.start(time); osc.stop(time+dur);
-    if (profile==='voice' && (type==='beat' || type==='accent')) { const cnt=(idxInBar%beatsPerBar)+1; const now=ctx.currentTime; const delay=Math.max(0,(time-now)*1000); window.setTimeout(()=>say(cnt), delay); }
+    const ctx = ctxRef.current; if (!ctx) return;
+    const profile = SOUND_PROFILES[soundProfile] || SOUND_PROFILES.beep;
+    if (profile.speak && (type === 'beat' || type === 'accent')) {
+      const cnt = (idxInBar % beatsPerBar) + 1;
+      const now = ctx.currentTime;
+      const delay = Math.max(0, (time - now) * 1000);
+      window.setTimeout(() => say(cnt), delay);
+    }
+
+    const typeVolume = type === 'accent' ? volumes.accent : type === 'beat' ? volumes.beat : volumes.sub;
+    const levelScale = resolveByType(profile.level, type) ?? 1;
+    const peakLevel = Math.min(1.2, Math.max(0, typeVolume * levelScale));
+    if (peakLevel <= 0) return;
+
+    const envBase = (profile.envelope && (profile.envelope[type] || profile.envelope.default)) || profile.envelope || {};
+    const attack = Math.max(0.0001, envBase.attack ?? 0.001);
+    const decay = Math.max(0.0001, envBase.decay ?? 0.12);
+    const sustain = envBase.sustain ?? 0.001;
+    const release = envBase.release ?? 0.05;
+    const stopTime = time + attack + decay + release;
+
+    const outGain = ctx.createGain();
+    outGain.gain.setValueAtTime(0.0001, time);
+    if (peakLevel < 0.001) {
+      outGain.gain.linearRampToValueAtTime(peakLevel, time + attack);
+      outGain.gain.linearRampToValueAtTime(0.0001, time + attack + decay);
+      outGain.gain.linearRampToValueAtTime(0.0001, stopTime);
+    } else {
+      outGain.gain.linearRampToValueAtTime(peakLevel, time + attack);
+      const sustainLevel = Math.max(0.0001, peakLevel * sustain);
+      outGain.gain.exponentialRampToValueAtTime(sustainLevel, time + attack + decay);
+      outGain.gain.exponentialRampToValueAtTime(0.0001, stopTime);
+    }
+    outGain.connect(ctx.destination);
+
+    let destination = outGain;
+    if (profile.filter) {
+      const filterNode = ctx.createBiquadFilter();
+      filterNode.type = profile.filter.type || 'bandpass';
+      const freq = resolveByType(profile.filter.frequency, type);
+      if (freq) filterNode.frequency.setValueAtTime(freq, time);
+      const qVal = resolveByType(profile.filter.Q, type);
+      if (qVal != null) filterNode.Q.setValueAtTime(qVal, time);
+      const gainVal = resolveByType(profile.filter.gain, type);
+      if (gainVal != null) filterNode.gain.setValueAtTime(gainVal, time);
+      filterNode.connect(outGain);
+      destination = filterNode;
+    }
+
+    const oscillators = profile.oscillators || [];
+    oscillators.forEach((oscSpec) => {
+      const freq = resolveByType(oscSpec.freq, type);
+      if (!freq) return;
+      const osc = ctx.createOscillator();
+      osc.type = oscSpec.type || 'sine';
+      osc.frequency.setValueAtTime(freq, time);
+      if (oscSpec.detune != null) osc.detune.setValueAtTime(oscSpec.detune, time);
+      if (oscSpec.pitchEnv) {
+        const { ratio = 0.5, duration = 0.05, mode = 'exponential', target } = oscSpec.pitchEnv;
+        const endFreq = target != null ? target : freq * ratio;
+        const rampTarget = Math.max(1, endFreq);
+        const rampTime = time + Math.max(0.001, duration);
+        if (mode === 'linear') {
+          osc.frequency.linearRampToValueAtTime(rampTarget, rampTime);
+        } else {
+          osc.frequency.exponentialRampToValueAtTime(rampTarget, rampTime);
+        }
+      }
+      const oscGain = ctx.createGain();
+      const partGainRaw = resolveByType(oscSpec.gain, type);
+      const partGain = partGainRaw != null ? partGainRaw : (typeof oscSpec.gain === 'number' ? oscSpec.gain : 1);
+      oscGain.gain.setValueAtTime(partGain, time);
+      osc.connect(oscGain);
+      oscGain.connect(destination);
+      osc.start(time);
+      osc.stop(stopTime);
+    });
+
+    if (profile.noise) {
+      const buffer = ensureNoiseBuffer();
+      if (buffer) {
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        const noiseGain = ctx.createGain();
+        const gainSpecRaw = resolveByType(profile.noise.gain, type);
+        const noiseGainValue = gainSpecRaw != null ? gainSpecRaw : (typeof profile.noise.gain === 'number' ? profile.noise.gain : 0.4);
+        if (noiseGainValue > 0) {
+          noiseGain.gain.setValueAtTime(noiseGainValue, time);
+          noise.connect(noiseGain);
+          if (profile.noise.filter) {
+            const nf = ctx.createBiquadFilter();
+            nf.type = profile.noise.filter.type || 'highpass';
+            const nfFreq = resolveByType(profile.noise.filter.frequency, type);
+            if (nfFreq) nf.frequency.setValueAtTime(nfFreq, time);
+            const nfQ = resolveByType(profile.noise.filter.Q, type);
+            if (nfQ != null) nf.Q.setValueAtTime(nfQ, time);
+            noiseGain.connect(nf);
+            nf.connect(destination);
+          } else {
+            noiseGain.connect(destination);
+          }
+          noise.start(time);
+          const noiseStop = time + attack + Math.max(decay, profile.noise.decay ?? 0.04);
+          noise.stop(noiseStop);
+        }
+      }
+    }
   };
   useEffect(() => {
     if (!running) { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current=null; nextTimeRef.current=0; stepRef.current=0; countingInRef.current=countInBars; return; }
