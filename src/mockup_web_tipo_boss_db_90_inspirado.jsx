@@ -17,6 +17,16 @@ const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const BPM_MIN = 30;
 const BPM_MAX = 250;
+const PATTERN_STEP_COUNT = 16;
+const PATTERN_FIGURES = [
+  { value: "quarter", label: "♩", beats: 1 },
+  { value: "eighth", label: "♪", beats: 0.5 },
+  { value: "sixteenth", label: "ᶿ", beats: 0.25 },
+];
+const FIGURE_BEATS = PATTERN_FIGURES.reduce((acc, fig) => {
+  acc[fig.value] = fig.beats;
+  return acc;
+}, {});
 function noteToHz(noteIndex /* 0=C0 */, a4 = 440) {
   const semitonesFromA4 = noteIndex - (4 * 12 + 9); // A4 index (A)
   const hz = a4 * Math.pow(2, semitonesFromA4 / 12);
@@ -28,6 +38,38 @@ function flattenTo16(arr) {
   for (let i = 0; i < 16; i++) { const src = Math.floor((i / 16) * len); out[i] = arr[src] ? 1 : 0; }
   return out;
 }
+const normalizePatternStep = (raw) => {
+  if (typeof raw === "number") {
+    return { level: raw ? 1 : 0, figure: "sixteenth" };
+  }
+  if (raw && typeof raw === "object") {
+    const levelRaw = raw.level != null ? raw.level : (raw.enabled ? 1 : 0);
+    const level = clamp(Number.parseInt(levelRaw, 10) || 0, 0, 2);
+    const figure = FIGURE_BEATS[raw.figure] ? raw.figure : "sixteenth";
+    return { level, figure };
+  }
+  return { level: 0, figure: "sixteenth" };
+};
+const createEmptyPattern = () => Array.from({ length: PATTERN_STEP_COUNT }, () => ({ level: 0, figure: "sixteenth" }));
+const normalizePatternSteps = (rawSteps) => {
+  const base = createEmptyPattern();
+  if (!Array.isArray(rawSteps)) return base;
+  const max = Math.min(rawSteps.length, PATTERN_STEP_COUNT);
+  for (let i = 0; i < max; i += 1) {
+    base[i] = normalizePatternStep(rawSteps[i]);
+  }
+  return base;
+};
+const patternStepsToSchedule = (steps, stepsPerBeat) => {
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+  const subdivisionsPerBeat = Math.max(1, stepsPerBeat);
+  return steps.map((step) => {
+    const beats = FIGURE_BEATS[step.figure] ?? FIGURE_BEATS.sixteenth;
+    const duration = Math.max(1, Math.round(beats * subdivisionsPerBeat));
+    const level = clamp(Number.parseInt(step.level, 10) || 0, 0, 2);
+    return { level, duration };
+  });
+};
 
 /* -------------------- Icons (monochrome, retro, stroke) -------------------- */
 const I = {
@@ -268,11 +310,12 @@ function SevenSegNumber({ value=120, color='#22c55e', on=true }) {
 /* -------------------- Audio Engines -------------------- */
 function useMetronomeEngine({
   bpm, stepsPerBeat, beatsPerBar, accentMap, volumes, running, swing, countInBars,
-  soundProfile, tempoLocked, onBar, onBeat, voiceCount, stepPattern, seqMode,
+  soundProfile, tempoLocked, onBar, onBeat, voiceCount, patternSchedule, seqMode, seqEnabled,
 }) {
   const ctxRef = useRef(null), nextTimeRef = useRef(0), stepRef = useRef(0), rafRef = useRef(null);
   const countingInRef = useRef(countInBars);
   const noiseBufferRef = useRef(null);
+  const patternCursorRef = useRef({ index: 0, remaining: 0, level: 0, justTriggered: false });
   const say = (text) => { try { if (!voiceCount) return; const u = new window.SpeechSynthesisUtterance(String(text)); u.lang='es-ES'; u.rate=1; u.pitch=1; u.volume=1; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);} catch(_){} };
   const ensureNoiseBuffer = () => {
     const ctx = ctxRef.current; if (!ctx) return null;
@@ -397,25 +440,61 @@ function useMetronomeEngine({
     }
   };
   useEffect(() => {
-    if (!running) { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current=null; nextTimeRef.current=0; stepRef.current=0; countingInRef.current=countInBars; return; }
+    patternCursorRef.current = { index: 0, remaining: 0, level: 0, justTriggered: false };
+  }, [patternSchedule, seqMode, seqEnabled, stepsPerBeat, beatsPerBar]);
+  useEffect(() => {
+    if (!running) { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current=null; nextTimeRef.current=0; stepRef.current=0; countingInRef.current=countInBars; patternCursorRef.current = { index: 0, remaining: 0, level: 0, justTriggered: false }; return; }
     if (tempoLocked) return; if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = ctxRef.current; const scheduleAhead = 0.12; if (nextTimeRef.current===0) { nextTimeRef.current=ctx.currentTime+0.05; stepRef.current=0; }
     const tick = () => {
       while (nextTimeRef.current < ctx.currentTime + scheduleAhead) {
         const stepInBeat = stepRef.current % stepsPerBeat; const beatIndex = Math.floor(stepRef.current / stepsPerBeat); const barIndex = Math.floor(beatIndex / beatsPerBar); const beatInBar = beatIndex % beatsPerBar;
         const inCountIn = countingInRef.current > 0; const accent = accentMap[beatInBar] === 2; const beatMark = accentMap[beatInBar] >= 1; const baseType = stepInBeat===0 ? (accent ? 'accent' : (beatMark ? 'beat' : 'sub')) : 'sub';
-        const stepsPerBarTotal = stepsPerBeat * beatsPerBar; const idxInBar = beatInBar * stepsPerBeat + stepInBeat;
-        let allowBySeq = true; if (stepPattern && stepPattern.length === stepsPerBarTotal) { allowBySeq = (seqMode==='replace') ? (stepPattern[idxInBar]===1) : ((stepPattern[idxInBar]===1) || (stepInBeat===0)); }
+        let patternLevel = null; let triggerLevel = null;
+        if (seqEnabled && patternSchedule && patternSchedule.length > 0) {
+          const cursor = patternCursorRef.current;
+          if (!inCountIn) {
+            if (cursor.remaining <= 0) {
+              const nextStep = patternSchedule[cursor.index];
+              cursor.level = nextStep.level;
+              cursor.remaining = Math.max(1, nextStep.duration);
+              cursor.index = (cursor.index + 1) % patternSchedule.length;
+              cursor.justTriggered = true;
+            } else {
+              cursor.justTriggered = false;
+            }
+            cursor.remaining -= 1;
+            patternLevel = cursor.level;
+            triggerLevel = cursor.justTriggered ? cursor.level : null;
+          } else {
+            cursor.justTriggered = false;
+            patternLevel = cursor.level;
+            triggerLevel = null;
+          }
+        }
         if (stepInBeat===0) { if (onBeat) onBeat({ beatIndex, beatInBar, barIndex }); }
         if (stepInBeat===0 && beatInBar===0) { if (onBar) onBar({ barIndex }); if (inCountIn) countingInRef.current -= 1; }
-        if (!inCountIn && allowBySeq) scheduleClick(nextTimeRef.current, baseType, beatInBar);
+        const replacing = seqEnabled && patternSchedule && patternSchedule.length > 0 && seqMode === 'replace';
+        if (!inCountIn) {
+          if (triggerLevel && triggerLevel > 0) {
+            const patternType = triggerLevel === 2 ? 'accent' : 'beat';
+            scheduleClick(nextTimeRef.current, patternType, beatInBar);
+          }
+          if (!replacing) {
+            let finalType = baseType;
+            if (patternLevel != null && patternLevel > 0) {
+              if (patternLevel === 2) finalType = 'accent'; else if (finalType === 'sub') finalType = 'beat';
+            }
+            scheduleClick(nextTimeRef.current, finalType, beatInBar);
+          }
+        }
         const baseStep = (60/bpm)/stepsPerBeat; let stepDur = baseStep; if (stepsPerBeat===2 || stepsPerBeat===4) { const sw=swing; const longD=baseStep*(1+sw); const shortD=baseStep*(1-sw); const isOdd=(stepInBeat%2)===0; stepDur = isOdd? longD : shortD; }
         nextTimeRef.current += stepDur; stepRef.current += 1;
       }
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick); return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [running,bpm,stepsPerBeat,beatsPerBar,accentMap,swing,countInBars,volumes,soundProfile,tempoLocked,stepPattern,seqMode,onBar,onBeat,voiceCount]);
+  }, [running,bpm,stepsPerBeat,beatsPerBar,accentMap,swing,countInBars,volumes,soundProfile,tempoLocked,patternSchedule,seqMode,seqEnabled,onBar,onBeat,voiceCount]);
 }
 
 function useTone({ enabled, noteHz, volume }) {
@@ -511,24 +590,18 @@ export default function DB90InspiredMockup() {
   const [patName, setPatName] = useState('');
   const [seqEnabled, setSeqEnabled] = useState(false);
   const [seqMode, setSeqMode] = useState('replace');
-  const [stepPattern, setStepPattern] = useState([]);
+  const [patternSteps, setPatternSteps] = useState(() => createEmptyPattern());
 
   // Engines
   const effectiveCountIn = coachMode === 'quiet' ? 0 : countInBars;
-  const totalStepsCurrent = useMemo(() => stepsPerBeat * beatsPerBar, [stepsPerBeat, beatsPerBar]);
-  const currentSeq = useMemo(() => {
-    if (!seqEnabled || !stepPattern || stepPattern.length === 0) return [];
-    const out = new Array(totalStepsCurrent).fill(0);
-    for (let i = 0; i < totalStepsCurrent; i++) { const src = Math.floor((i / totalStepsCurrent) * stepPattern.length); out[i] = stepPattern[src] ? 1 : 0; }
-    return out;
-  }, [seqEnabled, stepPattern, totalStepsCurrent]);
+  const patternSchedule = useMemo(() => patternStepsToSchedule(patternSteps, stepsPerBeat), [patternSteps, stepsPerBeat]);
 
   useMetronomeEngine({ bpm, stepsPerBeat, beatsPerBar, accentMap, volumes, running, swing, countInBars: effectiveCountIn, soundProfile, tempoLocked,
     onBar: ({ barIndex }) => {
       if (coachMode === 'gradual' && running) { barsElapsedRef.current += 1; const progress = clamp(barsElapsedRef.current/Math.max(1,gradualBars),0,1); const target = gradualFrom + (gradualTo - gradualFrom)*progress; setBpm(Math.round(target)); }
     },
     onBeat: ({ beatInBar }) => { setCurrentBeat(beatInBar); },
-    voiceCount, stepPattern: currentSeq, seqMode });
+    voiceCount, patternSchedule: seqEnabled ? patternSchedule : null, seqMode, seqEnabled });
   useTone({ enabled: toneOn, noteHz: noteToHz(toneNote, a4), volume });
   useMIDIClock({ running, bpm });
   useEffect(() => { runSelfTests(); }, []);
@@ -621,17 +694,17 @@ export default function DB90InspiredMockup() {
   useEffect(()=>{ setAccentMap((m)=>{ const n=m.slice(); if (n.length<beatsPerBar) while(n.length<beatsPerBar) n.push(1); if (n.length>beatsPerBar) n.length=beatsPerBar; n[0]=2; return n; }); }, [beatsPerBar]);
 
   // Presets
-  const savePreset = ()=>{ const p = { name: presetName||`Preset ${presets.length+1}`, bpm, beatsPerBar, stepsPerBeat, accentMap, swing, countInBars, volumes, soundProfile, voiceCount, coachMode, muteEvery, gradualFrom, gradualTo, gradualBars, a4, toneNote, stepPattern, seqMode, seqEnabled, theme }; const next=[].concat(presets, p); setPresets(next); localStorage.setItem('db90_presets_v3', JSON.stringify(next)); setPresetName(''); };
-  const loadPreset = (p)=>{ setBpm(p.bpm); setBeatsPerBar(p.beatsPerBar); setStepsPerBeat(p.stepsPerBeat); setAccentMap(p.accentMap); setSwing(p.swing||0); setCountInBars(p.countInBars||0); setVolumes(p.volumes||volumes); setSoundProfile(p.soundProfile||'beep'); setVoiceCount(!!p.voiceCount); setCoachMode(p.coachMode||'off'); setMuteEvery(p.muteEvery||0); setGradualFrom(p.gradualFrom||bpm); setGradualTo(p.gradualTo||bpm); setGradualBars(p.gradualBars||16); setA4(p.a4||440); setToneNote(p.toneNote||57); if (p.stepPattern && p.stepPattern.length) setStepPattern(p.stepPattern); else setStepPattern([]); setSeqMode(p.seqMode||'replace'); setSeqEnabled(!!p.seqEnabled); if (p.theme) setTheme(p.theme); };
+  const savePreset = ()=>{ const p = { name: presetName||`Preset ${presets.length+1}`, bpm, beatsPerBar, stepsPerBeat, accentMap, swing, countInBars, volumes, soundProfile, voiceCount, coachMode, muteEvery, gradualFrom, gradualTo, gradualBars, a4, toneNote, stepPattern: patternSteps, seqMode, seqEnabled, theme }; const next=[].concat(presets, p); setPresets(next); localStorage.setItem('db90_presets_v3', JSON.stringify(next)); setPresetName(''); };
+  const loadPreset = (p)=>{ setBpm(p.bpm); setBeatsPerBar(p.beatsPerBar); setStepsPerBeat(p.stepsPerBeat); setAccentMap(p.accentMap); setSwing(p.swing||0); setCountInBars(p.countInBars||0); setVolumes(p.volumes||volumes); setSoundProfile(p.soundProfile||'beep'); setVoiceCount(!!p.voiceCount); setCoachMode(p.coachMode||'off'); setMuteEvery(p.muteEvery||0); setGradualFrom(p.gradualFrom||bpm); setGradualTo(p.gradualTo||bpm); setGradualBars(p.gradualBars||16); setA4(p.a4||440); setToneNote(p.toneNote||57); if (p.stepPattern && p.stepPattern.length) setPatternSteps(normalizePatternSteps(p.stepPattern)); else setPatternSteps(createEmptyPattern()); setSeqMode(p.seqMode||'replace'); setSeqEnabled(!!p.seqEnabled); if (p.theme) setTheme(p.theme); };
   const exportPresets = ()=>{ const blob=new Blob([JSON.stringify({presets,setlist}, null, 2)], {type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='db90-presets.json'; a.click(); URL.revokeObjectURL(url); };
   const importPresets = (file)=>{ const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if (data.presets) { setPresets(data.presets); localStorage.setItem('db90_presets_v3', JSON.stringify(data.presets)); } if (data.setlist) { setSetlist(data.setlist); localStorage.setItem('db90_setlist', JSON.stringify(data.setlist)); } }catch(__){} }; reader.readAsText(file); };
 
   // Setlist
-  const addToSetlist = ()=>{ const item={ name: presetName||`Song ${setlist.length+1}`, bpm, beatsPerBar, stepsPerBeat, stepPattern, seqMode, seqEnabled, theme }; const next=[].concat(setlist, item); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
+  const addToSetlist = ()=>{ const item={ name: presetName||`Song ${setlist.length+1}`, bpm, beatsPerBar, stepsPerBeat, stepPattern: patternSteps, seqMode, seqEnabled, theme }; const next=[].concat(setlist, item); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
   const removeFromSetlist = (i)=>{ const next=setlist.filter((_,k)=>k!==i); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
 
   // Pattern ops
-  const applyPattern = (arr)=>{ const base16 = flattenTo16(arr); setStepPattern(base16); };
+  const applyPattern = (arr)=>{ const base16 = flattenTo16(arr); setPatternSteps(normalizePatternSteps(base16)); };
 
   /* -------------------- UI -------------------- */
   const noteLabel = `${NOTE_NAMES[toneNote%12]}${Math.floor(toneNote/12)}`;
@@ -865,21 +938,56 @@ export default function DB90InspiredMockup() {
                     {Object.keys(patternLib[patCat]).map(n=> <option key={n} value={n}>{n}</option>)}
                   </select>
                   <button data-tooltip="Cargar patrón" onClick={()=>{ if (patName) applyPattern(patternLib[patCat][patName]); }} className={btn(false)}>Cargar</button>
-                  <button data-tooltip="Limpiar" onClick={()=>setStepPattern(new Array(16).fill(0))} className={btn(false)}>Clear</button>
+                  <button data-tooltip="Limpiar" onClick={()=>setPatternSteps(createEmptyPattern())} className={btn(false)}>Clear</button>
                 </div>
-                <div className="grid grid-cols-16 gap-1" data-tooltip="Haz clic para activar/desactivar pasos">
-                  {Array.from({length:16}).map((_,i)=> {
-                    const isActive = !!(stepPattern && stepPattern[i]);
-                    const label = `Paso ${i+1}${isActive ? ' activo' : ' inactivo'}`;
+                <div className="grid grid-cols-4 sm:grid-cols-8 xl:grid-cols-16 gap-2" data-tooltip="Configura figura y acento por paso">
+                  {patternSteps.map((step, i) => {
+                    const level = Number(step.level) || 0;
+                    const figure = step.figure || 'sixteenth';
+                    const accentLabel = level === 2 ? 'Accent fuerte' : level === 1 ? 'Golpe normal' : 'Silencio';
+                    const statusLabel = `Paso ${i+1}: ${accentLabel}`;
+                    const accentClass = level === 2
+                      ? 'bg-[color:var(--acc)] text-black border-[color:var(--acc)]'
+                      : level === 1
+                        ? 'bg-slate-800 text-slate-100 border-slate-600'
+                        : 'bg-slate-950 text-slate-400 border-slate-700';
                     return (
-                      <button
-                        key={i}
-                        {...tooltipProps(label)}
-                        aria-label={label}
-                        aria-pressed={isActive}
-                        onClick={()=> setStepPattern(prev=>{ const n=prev && prev.length? prev.slice(): new Array(16).fill(0); n[i]=n[i]?0:1; return n; })}
-                        className={`h-5 rounded-sm border ${ isActive? 'bg-[color:var(--acc)] border-[color:var(--acc)] text-black':'bg-slate-900 border-slate-700'}`}
-                      ></button>
+                      <div key={i} className="flex flex-col gap-1 p-1 rounded-sm border border-slate-800 bg-slate-900">
+                        <div className="text-center text-[10px] text-slate-500">{i+1}</div>
+                        <button
+                          {...tooltipProps(statusLabel + ' · clic para ciclar (Off→On→Accent)')}
+                          type="button"
+                          aria-label={statusLabel}
+                          aria-pressed={level > 0}
+                          onClick={()=> setPatternSteps(prev=>{
+                            const next = prev.slice();
+                            const current = next[i] || { level: 0, figure: 'sixteenth' };
+                            const nextLevel = (Number(current.level) + 1) % 3;
+                            next[i] = { ...current, level: nextLevel };
+                            return next;
+                          })}
+                          className={`text-[10px] px-2 py-1 rounded-sm border transition-colors ${accentClass}`}
+                        >
+                          {level === 2 ? 'ACC' : level === 1 ? 'ON' : 'OFF'}
+                        </button>
+                        <label className="sr-only" htmlFor={`pattern-figure-${i}`}>Figura paso {i+1}</label>
+                        <select
+                          {...tooltipProps(`Figura paso ${i+1}`)}
+                          id={`pattern-figure-${i}`}
+                          className="bg-slate-950 text-slate-100 border border-slate-700 rounded-sm text-[10px] px-1 py-[2px]"
+                          value={figure}
+                          onChange={(e)=> setPatternSteps(prev=>{
+                            const next = prev.slice();
+                            const current = next[i] || { level: 0, figure: 'sixteenth' };
+                            next[i] = { ...current, figure: e.target.value };
+                            return next;
+                          })}
+                        >
+                          {PATTERN_FIGURES.map((fig)=> (
+                            <option key={fig.value} value={fig.value}>{fig.label}</option>
+                          ))}
+                        </select>
+                      </div>
                     );
                   })}
                 </div>
