@@ -18,6 +18,13 @@ const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const BPM_MIN = 30;
 const BPM_MAX = 250;
 const PATTERN_STEP_COUNT = 16;
+const PRESET_STORAGE_KEY = "db90_presets_v3";
+const SETLIST_STORAGE_KEY = "db90_setlist";
+const GLOBAL_CONFIG_VERSION = 1;
+const VALID_SEQ_MODES = new Set(["replace", "add"]);
+const VALID_THEMES = new Set(["green", "amber"]);
+const VALID_STEPS_PER_BEAT = [1, 2, 3, 4];
+const COACH_MODES = ["off", "timecheck", "quiet", "gradual"];
 const PATTERN_FIGURES = [
   { value: "quarter", label: "♩", beats: 1 },
   { value: "eighth", label: "♪", beats: 0.5 },
@@ -68,6 +75,25 @@ const sanitizePatternSteps = (rawSteps) =>
     level: clamp(Number(step.level) || 0, 0, 2),
     figure: FIGURE_BEATS[step.figure] ? step.figure : "sixteenth",
   }));
+const sanitizeAccentMap = (rawMap, beatsPerBar = 4) => {
+  const beats = clamp(Number.parseInt(beatsPerBar, 10) || 4, 1, 16);
+  const out = Array.from({ length: beats }, (_, index) => {
+    if (!Array.isArray(rawMap)) return index === 0 ? 2 : 1;
+    const value = clamp(Number(rawMap[index]) || 0, 0, 2);
+    return value;
+  });
+  if (out.length > 0) out[0] = 2;
+  return out;
+};
+const sanitizeVolumes = (raw) => {
+  const base = { accent: 0.9, beat: 0.7, sub: 0.5 };
+  if (!raw || typeof raw !== "object") return base;
+  return {
+    accent: clamp(Number.parseFloat(raw.accent) || base.accent, 0, 1),
+    beat: clamp(Number.parseFloat(raw.beat) || base.beat, 0, 1),
+    sub: clamp(Number.parseFloat(raw.sub) || base.sub, 0, 1),
+  };
+};
 const patternStepsEqual = (a, b) => {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -206,6 +232,13 @@ const I = {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter" {...p}>
       <path d="M18 6L6 18M6 6l12 12"/>
     </svg>
+  ),
+  Trash:(p)=> (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter" {...p}>
+      <path d="M3 6h18"/>
+      <path d="M8 6l1-2h6l1 2"/>
+      <path d="M6 6v14h12V6"/>
+    </svg>
   )
 };
 
@@ -322,6 +355,170 @@ const resolveByType = (value, type) => {
     if (value.default != null) return value.default;
   }
   return undefined;
+};
+
+const sanitizePresetEntry = (raw, index = 0) => {
+  const base = raw && typeof raw === "object" ? raw : {};
+  const name = typeof base.name === "string" && base.name.trim() ? base.name.trim() : `Preset ${index + 1}`;
+  const bpm = clamp(Number.parseInt(base.bpm, 10) || 120, BPM_MIN, BPM_MAX);
+  const beatsPerBar = clamp(Number.parseInt(base.beatsPerBar, 10) || 4, 1, 16);
+  const stepsRaw = Number.parseInt(base.stepsPerBeat, 10);
+  const stepsPerBeat = VALID_STEPS_PER_BEAT.includes(stepsRaw) ? stepsRaw : 1;
+  const accentMap = sanitizeAccentMap(base.accentMap, beatsPerBar);
+  const swing = clamp(Number.parseFloat(base.swing) || 0, 0, 0.75);
+  const countInBars = clamp(Number.parseInt(base.countInBars, 10) || 0, 0, 8);
+  const volumes = sanitizeVolumes(base.volumes);
+  const soundProfile = typeof base.soundProfile === "string" && SOUND_PROFILES[base.soundProfile]
+    ? base.soundProfile
+    : "beep";
+  const voiceCount = !!base.voiceCount;
+  const coachMode = typeof base.coachMode === "string" && COACH_MODES.includes(base.coachMode)
+    ? base.coachMode
+    : "off";
+  const muteEveryRaw = Number.parseInt(base.muteEvery, 10);
+  const muteEvery = Number.isFinite(muteEveryRaw) ? clamp(muteEveryRaw, 0, 32) : 0;
+  const gradualFrom = clamp(Number.parseInt(base.gradualFrom, 10) || bpm, BPM_MIN, BPM_MAX);
+  const gradualTo = clamp(Number.parseInt(base.gradualTo, 10) || bpm, BPM_MIN, BPM_MAX);
+  const gradualBars = clamp(Number.parseInt(base.gradualBars, 10) || 16, 1, 256);
+  const a4 = clamp(Number.parseInt(base.a4, 10) || 440, 400, 480);
+  const toneNote = clamp(Number.parseInt(base.toneNote, 10) || 57, 24, 95);
+  const seqMode = typeof base.seqMode === "string" && VALID_SEQ_MODES.has(base.seqMode) ? base.seqMode : "replace";
+  const seqEnabled = !!base.seqEnabled;
+  const theme = typeof base.theme === "string" && VALID_THEMES.has(base.theme) ? base.theme : "green";
+  const stepPattern = sanitizePatternSteps(base.stepPattern ?? base.pattern ?? base.steps ?? []);
+  return {
+    name,
+    bpm,
+    beatsPerBar,
+    stepsPerBeat,
+    accentMap,
+    swing,
+    countInBars,
+    volumes,
+    soundProfile,
+    voiceCount,
+    coachMode,
+    muteEvery,
+    gradualFrom,
+    gradualTo,
+    gradualBars,
+    a4,
+    toneNote,
+    stepPattern,
+    seqMode,
+    seqEnabled,
+    theme,
+  };
+};
+
+const sanitizePresetCollection = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry, index) => sanitizePresetEntry(entry, index));
+};
+
+const sanitizeSetlistEntry = (raw, index = 0) => {
+  const base = raw && typeof raw === "object" ? raw : {};
+  const presetLike = sanitizePresetEntry(
+    {
+      ...base,
+      name: base.name,
+    },
+    index,
+  );
+  const name = typeof base.name === "string" && base.name.trim() ? base.name.trim() : `Song ${index + 1}`;
+  const volume = clamp(Number.parseFloat(base.volume) || 0.6, 0.05, 1);
+  const toneOn = base.toneOn != null ? !!base.toneOn : false;
+  const tempoLocked = !!base.tempoLocked;
+  return {
+    ...presetLike,
+    name,
+    volume,
+    toneOn,
+    tempoLocked,
+  };
+};
+
+const sanitizeSetlistCollection = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry, index) => sanitizeSetlistEntry(entry, index));
+};
+
+const serializeUserPatterns = (rawList) => {
+  if (!Array.isArray(rawList)) return [];
+  const seen = new Set();
+  return rawList.map((entry, index) => {
+    const base = entry && typeof entry === "object" ? entry : {};
+    let id = typeof base.id === "string" && base.id ? base.id : createPatternId(seen);
+    while (seen.has(id)) {
+      id = createPatternId(seen);
+    }
+    seen.add(id);
+    const name = typeof base.name === "string" && base.name.trim() ? base.name.trim() : `Patrón ${index + 1}`;
+    return {
+      id,
+      name,
+      steps: sanitizePatternSteps(base.steps ?? base.stepPattern ?? base.pattern ?? []),
+      seqMode: VALID_SEQ_MODES.has(base.seqMode) ? base.seqMode : "replace",
+      seqEnabled: !!base.seqEnabled,
+    };
+  });
+};
+
+const sanitizeConfigState = (rawState = {}) => {
+  const bpm = clamp(Number.parseInt(rawState.bpm, 10) || 120, BPM_MIN, BPM_MAX);
+  const beatsPerBar = clamp(Number.parseInt(rawState.beatsPerBar, 10) || 4, 1, 16);
+  const stepsRaw = Number.parseInt(rawState.stepsPerBeat, 10);
+  const stepsPerBeat = VALID_STEPS_PER_BEAT.includes(stepsRaw) ? stepsRaw : 1;
+  const accentMap = sanitizeAccentMap(rawState.accentMap, beatsPerBar);
+  const swing = clamp(Number.parseFloat(rawState.swing) || 0, 0, 0.75);
+  const countInBars = clamp(Number.parseInt(rawState.countInBars, 10) || 0, 0, 8);
+  const volume = clamp(Number.parseFloat(rawState.volume) || 0.6, 0.05, 1);
+  const volumes = sanitizeVolumes(rawState.volumes);
+  const soundProfile = typeof rawState.soundProfile === "string" && SOUND_PROFILES[rawState.soundProfile]
+    ? rawState.soundProfile
+    : "beep";
+  const voiceCount = !!rawState.voiceCount;
+  const coachMode = typeof rawState.coachMode === "string" && COACH_MODES.includes(rawState.coachMode)
+    ? rawState.coachMode
+    : "off";
+  const muteEveryRaw = Number.parseInt(rawState.muteEvery, 10);
+  const muteEvery = Number.isFinite(muteEveryRaw) ? clamp(muteEveryRaw, 0, 32) : 0;
+  const gradualFrom = clamp(Number.parseInt(rawState.gradualFrom, 10) || bpm, BPM_MIN, BPM_MAX);
+  const gradualTo = clamp(Number.parseInt(rawState.gradualTo, 10) || bpm, BPM_MIN, BPM_MAX);
+  const gradualBars = clamp(Number.parseInt(rawState.gradualBars, 10) || 16, 1, 256);
+  const toneOn = !!rawState.toneOn;
+  const a4 = clamp(Number.parseInt(rawState.a4, 10) || 440, 400, 480);
+  const toneNote = clamp(Number.parseInt(rawState.toneNote, 10) || 57, 24, 95);
+  const seqMode = typeof rawState.seqMode === "string" && VALID_SEQ_MODES.has(rawState.seqMode) ? rawState.seqMode : "replace";
+  const seqEnabled = !!rawState.seqEnabled;
+  const theme = typeof rawState.theme === "string" && VALID_THEMES.has(rawState.theme) ? rawState.theme : "green";
+  const tempoLocked = !!rawState.tempoLocked;
+  const patternSteps = sanitizePatternSteps(rawState.patternSteps ?? rawState.stepPattern ?? []);
+  return {
+    bpm,
+    beatsPerBar,
+    stepsPerBeat,
+    accentMap,
+    swing,
+    countInBars,
+    volume,
+    volumes,
+    soundProfile,
+    voiceCount,
+    coachMode,
+    muteEvery,
+    gradualFrom,
+    gradualTo,
+    gradualBars,
+    toneOn,
+    a4,
+    toneNote,
+    seqMode,
+    seqEnabled,
+    theme,
+    tempoLocked,
+    patternSteps,
+  };
 };
 
 /* -------------------- Self-tests -------------------- */
@@ -623,8 +820,28 @@ export default function DB90InspiredMockup() {
   // Presets & setlist
   const [activeTab, setActiveTab] = useState('presets');
   const [presetName, setPresetName] = useState('');
-  const [presets, setPresets] = useState(()=>{ try {return JSON.parse(localStorage.getItem('db90_presets_v3')||'[]');} catch (__) {return [];} });
-  const [setlist, setSetlist] = useState(()=>{ try {return JSON.parse(localStorage.getItem('db90_setlist')||'[]');} catch (__) {return [];} });
+  const [presets, setPresets] = useState(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(PRESET_STORAGE_KEY);
+      if (raw) return sanitizePresetCollection(JSON.parse(raw));
+    } catch (_) {
+      // ignore parse errors
+    }
+    return [];
+  });
+  const [setlist, setSetlist] = useState(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(SETLIST_STORAGE_KEY);
+      if (raw) return sanitizeSetlistCollection(JSON.parse(raw));
+    } catch (_) {
+      // ignore parse errors
+    }
+    return [];
+  });
+  const [presetFeedback, setPresetFeedback] = useState(null);
+  const [configFeedback, setConfigFeedback] = useState(null);
 
   // Pattern library
   const patternLib = useMemo(() => ({
@@ -694,6 +911,48 @@ export default function DB90InspiredMockup() {
       // ignore persistence errors
     }
   }, [userPatterns]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      const payload = sanitizePresetCollection(presets);
+      window.localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(payload));
+    } catch (_) {
+      // ignore persistence errors
+    }
+  }, [presets]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      const payload = sanitizeSetlistCollection(setlist);
+      window.localStorage.setItem(SETLIST_STORAGE_KEY, JSON.stringify(payload));
+    } catch (_) {
+      // ignore persistence errors
+    }
+  }, [setlist]);
+
+  useEffect(() => {
+    if (!presetFeedback) return undefined;
+    if (typeof window === 'undefined') return undefined;
+    const timeout = window.setTimeout(() => setPresetFeedback(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [presetFeedback]);
+
+  useEffect(() => {
+    if (!configFeedback) return undefined;
+    if (typeof window === 'undefined') return undefined;
+    const timeout = window.setTimeout(() => setConfigFeedback(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [configFeedback]);
+
+  const showPresetFeedback = (message, tone = 'info') => {
+    setPresetFeedback({ message, tone, id: Date.now() });
+  };
+
+  const showConfigFeedback = (message, tone = 'info') => {
+    setConfigFeedback({ message, tone, id: Date.now() });
+  };
 
   useEffect(() => {
     if (activeUserPattern) {
@@ -808,15 +1067,187 @@ export default function DB90InspiredMockup() {
 
   // Presets
   const savePreset = () => {
-    const sanitizedSteps = sanitizePatternSteps(patternSteps);
-    const p = {
-      name: presetName || `Preset ${presets.length + 1}`,
+    const entry = sanitizePresetEntry(
+      {
+        name: presetName || `Preset ${presets.length + 1}`,
+        bpm,
+        beatsPerBar,
+        stepsPerBeat,
+        accentMap,
+        swing,
+        countInBars,
+        volumes,
+        soundProfile,
+        voiceCount,
+        coachMode,
+        muteEvery,
+        gradualFrom,
+        gradualTo,
+        gradualBars,
+        a4,
+        toneNote,
+        stepPattern: sanitizePatternSteps(patternSteps),
+        seqMode,
+        seqEnabled,
+        theme,
+      },
+      presets.length,
+    );
+    setPresets((prev) => prev.concat(entry));
+    setPresetName('');
+    showPresetFeedback(`Preset "${entry.name}" guardado.`, 'success');
+  };
+  const loadPreset = (raw) => {
+    const preset = sanitizePresetEntry(raw, 0);
+    setBpm(preset.bpm);
+    setBpmInput(String(preset.bpm));
+    setBeatsPerBar(preset.beatsPerBar);
+    setStepsPerBeat(preset.stepsPerBeat);
+    setAccentMap(preset.accentMap);
+    setSwing(preset.swing);
+    setCountInBars(preset.countInBars);
+    setVolumes(preset.volumes);
+    setSoundProfile(preset.soundProfile);
+    setVoiceCount(!!preset.voiceCount);
+    setCoachMode(preset.coachMode);
+    setMuteEvery(preset.muteEvery);
+    setGradualFrom(preset.gradualFrom);
+    setGradualTo(preset.gradualTo);
+    setGradualBars(preset.gradualBars);
+    setA4(preset.a4);
+    setToneNote(preset.toneNote);
+    setPatternSteps(preset.stepPattern && preset.stepPattern.length ? preset.stepPattern : createEmptyPattern());
+    setSeqMode(preset.seqMode);
+    setSeqEnabled(preset.seqEnabled);
+    if (raw && typeof raw === 'object') {
+      if (typeof raw.theme === 'string' && VALID_THEMES.has(raw.theme)) {
+        setTheme(raw.theme);
+      }
+      if (raw.volume != null) {
+        setVolume(clamp(Number.parseFloat(raw.volume) || volume, 0.05, 1));
+      }
+      if (raw.toneOn != null) {
+        setToneOn(!!raw.toneOn);
+      }
+      if (raw.tempoLocked != null) {
+        setTempoLocked(!!raw.tempoLocked);
+      }
+    } else if (preset.theme) {
+      setTheme(preset.theme);
+    }
+    setPresetName('');
+    setRunning(false);
+    barsElapsedRef.current = 0;
+    resetActivePatternContext();
+    showPresetFeedback(`Preset "${preset.name}" cargado.`, 'success');
+  };
+  const exportPresets = () => {
+    try {
+      const payload = {
+        version: GLOBAL_CONFIG_VERSION,
+        presets: sanitizePresetCollection(presets),
+        setlist: sanitizeSetlistCollection(setlist),
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'db90-presets.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showPresetFeedback('Presets exportados (JSON).', 'success');
+    } catch (error) {
+      console.error('exportPresets', error);
+      showPresetFeedback('No se pudo exportar los presets.', 'error');
+    }
+  };
+  const importPresetsFromFile = async (file) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const importedPresets = sanitizePresetCollection(data?.presets ?? data ?? []);
+      const importedSetlist = sanitizeSetlistCollection(data?.setlist ?? []);
+      setPresets(importedPresets);
+      setSetlist(importedSetlist);
+      showPresetFeedback(`Importados ${importedPresets.length} presets.`, 'success');
+    } catch (error) {
+      console.error('importPresets', error);
+      showPresetFeedback('No se pudieron importar los presets.', 'error');
+    }
+  };
+
+  // Setlist
+  const addToSetlist = () => {
+    const entry = sanitizeSetlistEntry(
+      {
+        name: presetName || `Song ${setlist.length + 1}`,
+        bpm,
+        beatsPerBar,
+        stepsPerBeat,
+        accentMap,
+        swing,
+        countInBars,
+        volumes,
+        soundProfile,
+        voiceCount,
+        coachMode,
+        muteEvery,
+        gradualFrom,
+        gradualTo,
+        gradualBars,
+        a4,
+        toneNote,
+        stepPattern: sanitizePatternSteps(patternSteps),
+        seqMode,
+        seqEnabled,
+        theme,
+        volume,
+        toneOn,
+        tempoLocked,
+      },
+      setlist.length,
+    );
+    setSetlist((prev) => prev.concat(entry));
+    showPresetFeedback(`Añadido "${entry.name}" al setlist.`, 'success');
+  };
+  const removeFromSetlist = (index) => {
+    let removedEntry = null;
+    setSetlist((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
+      removedEntry = prev[index] ?? null;
+      return prev.filter((_, i) => i !== index);
+    });
+    if (removedEntry) {
+      const label = typeof removedEntry.name === 'string' && removedEntry.name.trim()
+        ? removedEntry.name.trim()
+        : 'Entrada';
+      showPresetFeedback(`"${label}" eliminado del setlist.`, 'success');
+    }
+  };
+  const deletePreset = (index) => {
+    if (index < 0 || index >= presets.length) return;
+    const target = presets[index];
+    const label = target && typeof target.name === 'string' && target.name.trim()
+      ? target.name.trim()
+      : `Preset ${index + 1}`;
+    if (typeof window !== 'undefined' && !window.confirm(`¿Eliminar el preset "${label}"?`)) {
+      return;
+    }
+    setPresets((prev) => prev.filter((_, i) => i !== index));
+    showPresetFeedback(`Preset "${label}" eliminado.`, 'success');
+  };
+
+  const buildGlobalConfigPayload = () => ({
+    version: GLOBAL_CONFIG_VERSION,
+    createdAt: new Date().toISOString(),
+    state: sanitizeConfigState({
       bpm,
       beatsPerBar,
       stepsPerBeat,
       accentMap,
       swing,
       countInBars,
+      volume,
       volumes,
       soundProfile,
       voiceCount,
@@ -825,51 +1256,87 @@ export default function DB90InspiredMockup() {
       gradualFrom,
       gradualTo,
       gradualBars,
+      toneOn,
       a4,
       toneNote,
-      stepPattern: sanitizedSteps,
       seqMode,
       seqEnabled,
       theme,
-    };
-    const next = [].concat(presets, p);
-    setPresets(next);
-    localStorage.setItem('db90_presets_v3', JSON.stringify(next));
+      tempoLocked,
+      patternSteps,
+    }),
+    presets: sanitizePresetCollection(presets),
+    setlist: sanitizeSetlistCollection(setlist),
+    userPatterns: serializeUserPatterns(userPatterns),
+  });
+
+  const applyGlobalConfigState = (rawState) => {
+    const state = sanitizeConfigState(rawState);
+    setBpm(state.bpm);
+    setBpmInput(String(state.bpm));
+    setBeatsPerBar(state.beatsPerBar);
+    setStepsPerBeat(state.stepsPerBeat);
+    setAccentMap(state.accentMap);
+    setSwing(state.swing);
+    setCountInBars(state.countInBars);
+    setVolume(state.volume);
+    setVolumes(state.volumes);
+    setSoundProfile(state.soundProfile);
+    setVoiceCount(!!state.voiceCount);
+    setCoachMode(state.coachMode);
+    setMuteEvery(state.muteEvery);
+    setGradualFrom(state.gradualFrom);
+    setGradualTo(state.gradualTo);
+    setGradualBars(state.gradualBars);
+    setToneOn(!!state.toneOn);
+    setA4(state.a4);
+    setToneNote(state.toneNote);
+    setSeqMode(state.seqMode);
+    setSeqEnabled(state.seqEnabled);
+    setTheme(state.theme);
+    setTempoLocked(!!state.tempoLocked);
+    setPatternSteps(state.patternSteps);
     setPresetName('');
-  };
-  const loadPreset = (p) => {
-    setBpm(p.bpm);
-    setBeatsPerBar(p.beatsPerBar);
-    setStepsPerBeat(p.stepsPerBeat);
-    setAccentMap(p.accentMap);
-    setSwing(p.swing || 0);
-    setCountInBars(p.countInBars || 0);
-    setVolumes(p.volumes || volumes);
-    setSoundProfile(p.soundProfile || 'beep');
-    setVoiceCount(!!p.voiceCount);
-    setCoachMode(p.coachMode || 'off');
-    setMuteEvery(p.muteEvery || 0);
-    setGradualFrom(p.gradualFrom || bpm);
-    setGradualTo(p.gradualTo || bpm);
-    setGradualBars(p.gradualBars || 16);
-    setA4(p.a4 || 440);
-    setToneNote(p.toneNote || 57);
-    if (p.stepPattern && p.stepPattern.length) {
-      setPatternSteps(sanitizePatternSteps(p.stepPattern));
-    } else {
-      setPatternSteps(createEmptyPattern());
-    }
-    setSeqMode(p.seqMode || 'replace');
-    setSeqEnabled(!!p.seqEnabled);
-    if (p.theme) setTheme(p.theme);
+    setRunning(false);
+    barsElapsedRef.current = 0;
     resetActivePatternContext();
   };
-  const exportPresets = ()=>{ const blob=new Blob([JSON.stringify({presets,setlist}, null, 2)], {type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='db90-presets.json'; a.click(); URL.revokeObjectURL(url); };
-  const importPresets = (file)=>{ const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if (data.presets) { setPresets(data.presets); localStorage.setItem('db90_presets_v3', JSON.stringify(data.presets)); } if (data.setlist) { setSetlist(data.setlist); localStorage.setItem('db90_setlist', JSON.stringify(data.setlist)); } }catch(__){} }; reader.readAsText(file); };
 
-  // Setlist
-  const addToSetlist = ()=>{ const item={ name: presetName||`Song ${setlist.length+1}`, bpm, beatsPerBar, stepsPerBeat, stepPattern: sanitizePatternSteps(patternSteps), seqMode, seqEnabled, theme }; const next=[].concat(setlist, item); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
-  const removeFromSetlist = (i)=>{ const next=setlist.filter((_,k)=>k!==i); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
+  const exportGlobalConfig = () => {
+    try {
+      const payload = buildGlobalConfigPayload();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'db90-config.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showConfigFeedback('Configuración exportada (JSON).', 'success');
+    } catch (error) {
+      console.error('exportConfig', error);
+      showConfigFeedback('No se pudo exportar la configuración.', 'error');
+    }
+  };
+
+  const importGlobalConfigFromFile = async (file) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const state = sanitizeConfigState(data?.state ?? data ?? {});
+      const importedPresets = sanitizePresetCollection(data?.presets ?? []);
+      const importedSetlist = sanitizeSetlistCollection(data?.setlist ?? []);
+      const importedUserPatterns = serializeUserPatterns(data?.userPatterns ?? data?.patterns ?? []);
+      applyGlobalConfigState(state);
+      setPresets(importedPresets);
+      setSetlist(importedSetlist);
+      setUserPatterns(importedUserPatterns);
+      showConfigFeedback('Configuración importada correctamente.', 'success');
+    } catch (error) {
+      console.error('importConfig', error);
+      showConfigFeedback('No se pudo importar la configuración.', 'error');
+    }
+  };
 
   // Pattern ops
   const resetActivePatternContext = () => {
@@ -979,6 +1446,18 @@ export default function DB90InspiredMockup() {
   const btn = (active) => `px-3 py-2 rounded-sm border text-sm tracking-tight transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${active? 'bg-slate-100 text-slate-900 border-slate-100':'bg-slate-900 text-slate-100 border-slate-600 hover:bg-slate-800'}`;
   const knob = "appearance-none w-full h-1 bg-slate-700";
   const label = "text-[10px] text-slate-400 tracking-[0.2em]";
+  const feedbackToneClass = (tone) => {
+    switch (tone) {
+      case 'success':
+        return 'border-emerald-500 text-emerald-200 bg-emerald-900/20';
+      case 'error':
+        return 'border-red-500 text-red-200 bg-red-900/20';
+      case 'warning':
+        return 'border-amber-500 text-amber-200 bg-amber-900/20';
+      default:
+        return 'border-slate-600 text-slate-200 bg-slate-900';
+    }
+  };
 
   return (
     <div className={`${bg} flex items-stretch justify-center p-6`} style={{fontFamily:'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', fontFeatureSettings:'"tnum" 1', ['--acc'] : accent}}>
@@ -1346,7 +1825,58 @@ export default function DB90InspiredMockup() {
               </div>
             </div>
 
-            <div className={`${card} p-4 min-h-[320px]`}> 
+            <div className={`${card} p-4`}>
+              <div className={label}>CONFIG</div>
+              <div className="mt-2 space-y-2 text-[12px]">
+                <div className="text-slate-300">
+                  Exporta o importa la configuración completa, incluyendo presets, setlist y patrones guardados.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    {...tooltipProps('Exportar configuración (JSON)')}
+                    onClick={exportGlobalConfig}
+                    className={`${btn(false)} inline-flex items-center gap-1`}
+                  >
+                    <I.Download/>
+                    Exportar
+                  </button>
+                  <label
+                    {...tooltipProps('Importar configuración (JSON)')}
+                    className={`${btn(false)} cursor-pointer inline-flex items-center gap-1`}
+                  >
+                    <I.Upload/>
+                    Importar
+                    <input
+                      type="file"
+                      accept="application/json"
+                      className="hidden"
+                      onChange={(e)=>{
+                        const file = e.target.files && e.target.files[0];
+                        if (file) {
+                          importGlobalConfigFromFile(file).finally(()=>{ e.target.value=''; });
+                        } else {
+                          e.target.value='';
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                {configFeedback && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className={`text-[11px] px-2 py-1 rounded-sm border ${feedbackToneClass(configFeedback.tone)} flex items-center gap-2`}
+                  >
+                    {configFeedback.message}
+                  </div>
+                )}
+                <div className="text-[10px] text-slate-500">
+                  Al importar se sobrescribirá el estado actual.
+                </div>
+              </div>
+            </div>
+
+            <div className={`${card} p-4 min-h-[320px]`}>
               <div className={label}>PRESETS</div>
               <div className="flex items-center gap-2 mb-2 mt-1">
                 <button
@@ -1367,26 +1897,67 @@ export default function DB90InspiredMockup() {
 
               {activeTab==='presets' ? (
                 <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input data-tooltip="Nombre preset" value={presetName} onChange={(e)=>setPresetName(e.target.value)} placeholder="Nombre" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-2 flex-1"/>
+                  <div className="flex gap-2 flex-wrap">
+                    <input data-tooltip="Nombre preset" value={presetName} onChange={(e)=>setPresetName(e.target.value)} placeholder="Nombre" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-2 flex-1 min-w-[160px]"/>
                     <button data-tooltip="Guardar preset" onClick={savePreset} className={btn(false)}><I.Save/></button>
                     <button data-tooltip="Exportar JSON" onClick={exportPresets} className={btn(false)}><I.Download/></button>
-                    <label data-tooltip="Importar JSON" className={`${btn(false)} cursor-pointer`}><I.Upload/><input type="file" accept="application/json" className="hidden" onChange={(e)=>{ const f=e.target.files && e.target.files[0]; if (f) importPresets(f); }}/></label>
+                    <label
+                      {...tooltipProps('Importar JSON')}
+                      className={`${btn(false)} cursor-pointer inline-flex items-center gap-1`}
+                    >
+                      <I.Upload/>
+                      <input
+                        type="file"
+                        accept="application/json"
+                        className="hidden"
+                        onChange={(e)=>{
+                          const file = e.target.files && e.target.files[0];
+                          if (file) {
+                            importPresetsFromFile(file).finally(()=>{ e.target.value=''; });
+                          } else {
+                            e.target.value='';
+                          }
+                        }}
+                      />
+                    </label>
                   </div>
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 max-h-44 overflow-auto">
-                    {presets.map((p,i)=> {
-                      const tip = `${p.name} — ${p.bpm} BPM`;
-                      return (
-                        <button
-                          key={i}
-                          {...tooltipProps(tip)}
-                          onClick={()=>loadPreset(p)}
-                          className="p-2 rounded-sm border border-slate-700 bg-slate-900 hover:bg-slate-800 text-left truncate"
-                        >
-                          {p.name}
-                        </button>
-                      );
-                    })}
+                  {presetFeedback && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className={`text-[11px] px-2 py-1 rounded-sm border ${feedbackToneClass(presetFeedback.tone)} flex items-center gap-2`}
+                    >
+                      {presetFeedback.message}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-44 overflow-auto">
+                    {presets.length === 0 ? (
+                      <div className="text-[11px] text-slate-500">No hay presets guardados.</div>
+                    ) : (
+                      presets.map((p,i)=> {
+                        const label = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : `Preset ${i + 1}`;
+                        const tip = `${label} — ${p.bpm} BPM`;
+                        return (
+                          <div key={`${p.name}-${i}`} className="flex items-center gap-1">
+                            <button
+                              {...tooltipProps(tip)}
+                              onClick={()=>loadPreset(p)}
+                              className="flex-1 p-2 rounded-sm border border-slate-700 bg-slate-900 hover:bg-slate-800 text-left truncate"
+                            >
+                              {label}
+                            </button>
+                            <button
+                              {...tooltipProps(`Eliminar ${label}`)}
+                              onClick={()=>deletePreset(i)}
+                              className="p-2 rounded-sm border border-slate-700 hover:bg-red-900/30 text-red-300"
+                              aria-label={`Eliminar preset ${label}`}
+                            >
+                              <I.Trash/>
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               ) : (
