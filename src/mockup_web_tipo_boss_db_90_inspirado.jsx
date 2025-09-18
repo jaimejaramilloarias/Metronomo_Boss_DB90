@@ -423,9 +423,9 @@ export default function DB90InspiredMockup() {
             <span className="text-[10px] text-slate-400">v4.3</span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-slate-300">
-            <span title="Audio" className="inline-flex items-center gap-1">{running? <I.Dot style={{color:'var(--acc)'}}/> : <I.Dot className="text-slate-500"/>}Engine</span>
-            <span title="Tempo lock" className="inline-flex items-center gap-1">{tempoLocked? <I.Lock/> : <I.Unlock/>}</span>
-            <div className="inline-flex items-center gap-1" title="Theme">
+            <span data-tooltip="Audio" className="inline-flex items-center gap-1">{running? <I.Dot style={{color:'var(--acc)'}}/> : <I.Dot className="text-slate-500"/>}Engine</span>
+            <span data-tooltip="Tempo lock" className="inline-flex items-center gap-1">{tempoLocked? <I.Lock/> : <I.Unlock/>}</span>
+            <div className="inline-flex items-center gap-1" data-tooltip="Theme">
               <button className={btn(theme==='green')} onClick={()=>setTheme('green')}>GREEN</button>
               <button className={btn(theme==='amber')} onClick={()=>setTheme('amber')}>AMBER</button>
             </div>
@@ -440,9 +440,9 @@ export default function DB90InspiredMockup() {
             {/* Transport */}
             <div className="mt-1 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <button title="Start/Stop (Enter)" onClick={()=>setRunning(r=>!r)} className={`${btn(running)} !px-4 !py-2`}>{running? <I.Stop/> : <I.Play/>}</button>
-                <button title="Tap (Space)" onClick={tap} className={btn(false)}><span className="inline-flex items-center gap-1"><I.Tap/> Tap</span></button>
-                <button title="Bloquear tempo (L)" onClick={()=>setTempoLocked(v=>!v)} className={btn(tempoLocked)}><span className="inline-flex items-center gap-1">{tempoLocked? <I.Lock/> : <I.Unlock/>} Lock</span></button>
+                <button data-tooltip="Start/Stop (Enter)" onClick={()=>setRunning(r=>!r)} className={`${btn(running)} !px-4 !py-2`}>{running? <I.Stop/> : <I.Play/>}</button>
+                <button data-tooltip="Tap (Space)" onClick={tap} className={btn(false)}><span className="inline-flex items-center gap-1"><I.Tap/> Tap</span></button>
+                <button data-tooltip="Bloquear tempo (L)" onClick={()=>setTempoLocked(v=>!v)} className={btn(tempoLocked)}><span className="inline-flex items-center gap-1">{tempoLocked? <I.Lock/> : <I.Unlock/>} Lock</span></button>
               </div>
               <div className="text-[10px] text-slate-400">↑↓ ±1 • ←→ ±5</div>
             </div>
@@ -486,7 +486,7 @@ export default function DB90InspiredMockup() {
                 <div className="mt-4 w-full space-y-3">
                   <div className={`${label} text-center`}>BPM CONTROL</div>
                   <input
-                    title="Control de BPM"
+                    data-tooltip="Control de BPM"
                     type="range"
                     min={BPM_MIN}
                     max={BPM_MAX}
@@ -498,10 +498,10 @@ export default function DB90InspiredMockup() {
                     style={{ accentColor: 'var(--acc)' }}
                   />
                   <div className="flex flex-wrap items-center justify-center gap-2 text-[12px]">
-                    <button title="Restar 5 BPM" onClick={()=>adjustBpm(-5)} disabled={tempoLocked} className={btn(false)}>−5</button>
-                    <button title="Restar 1 BPM" onClick={()=>adjustBpm(-1)} disabled={tempoLocked} className={btn(false)}>−1</button>
+                    <button data-tooltip="Restar 5 BPM" onClick={()=>adjustBpm(-5)} disabled={tempoLocked} className={btn(false)}>−5</button>
+                    <button data-tooltip="Restar 1 BPM" onClick={()=>adjustBpm(-1)} disabled={tempoLocked} className={btn(false)}>−1</button>
                     <input
-                      title="Editar BPM"
+                      data-tooltip="Editar BPM"
                       type="number"
                       min={BPM_MIN}
                       max={BPM_MAX}
@@ -512,19 +512,19 @@ export default function DB90InspiredMockup() {
                       disabled={tempoLocked}
                       className="w-20 bg-slate-950 text-slate-100 border border-slate-700 rounded-sm p-2 text-center text-[14px]"
                     />
-                    <button title="Sumar 1 BPM" onClick={()=>adjustBpm(1)} disabled={tempoLocked} className={btn(false)}>+1</button>
-                    <button title="Sumar 5 BPM" onClick={()=>adjustBpm(5)} disabled={tempoLocked} className={btn(false)}>+5</button>
+                    <button data-tooltip="Sumar 1 BPM" onClick={()=>adjustBpm(1)} disabled={tempoLocked} className={btn(false)}>+1</button>
+                    <button data-tooltip="Sumar 5 BPM" onClick={()=>adjustBpm(5)} disabled={tempoLocked} className={btn(false)}>+5</button>
                   </div>
                 </div>
               </div>
               <div className="space-y-2">
-                <input title="Volumen master" type="range" min={0.05} max={1} step={0.05} value={volume} onChange={(e)=>setVolume(parseFloat(e.target.value))} className={knob}/>
+                <input data-tooltip="Volumen master" type="range" min={0.05} max={1} step={0.05} value={volume} onChange={(e)=>setVolume(parseFloat(e.target.value))} className={knob}/>
                 <div className="grid grid-cols-3 gap-2 text-[10px]">
-                  <input title="Accent" type="range" min={0} max={1} step={0.05} value={volumes.accent} onChange={(e)=>setVolumes(v=>({...v,accent:parseFloat(e.target.value)}))} className={knob}/>
-                  <input title="Beat" type="range" min={0} max={1} step={0.05} value={volumes.beat} onChange={(e)=>setVolumes(v=>({...v,beat:parseFloat(e.target.value)}))} className={knob}/>
-                  <input title="Subdiv" type="range" min={0} max={1} step={0.05} value={volumes.sub} onChange={(e)=>setVolumes(v=>({...v,sub:parseFloat(e.target.value)}))} className={knob}/>
+                  <input data-tooltip="Accent" type="range" min={0} max={1} step={0.05} value={volumes.accent} onChange={(e)=>setVolumes(v=>({...v,accent:parseFloat(e.target.value)}))} className={knob}/>
+                  <input data-tooltip="Beat" type="range" min={0} max={1} step={0.05} value={volumes.beat} onChange={(e)=>setVolumes(v=>({...v,beat:parseFloat(e.target.value)}))} className={knob}/>
+                  <input data-tooltip="Subdiv" type="range" min={0} max={1} step={0.05} value={volumes.sub} onChange={(e)=>setVolumes(v=>({...v,sub:parseFloat(e.target.value)}))} className={knob}/>
                 </div>
-                <select title="Perfil de sonido" className="w-full bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={soundProfile} onChange={(e)=>setSoundProfile(e.target.value)}>
+                <select data-tooltip="Perfil de sonido" className="w-full bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={soundProfile} onChange={(e)=>setSoundProfile(e.target.value)}>
                   <option value="beep">Beep</option><option value="click">Click</option><option value="woodblock">Wood</option><option value="cowbell">Cow</option><option value="voice">Voz</option>
                 </select>
               </div>
@@ -535,27 +535,27 @@ export default function DB90InspiredMockup() {
               <div className={`${card} p-3`}>
                 <div className={label}>METER</div>
                 <div className="mt-2 flex items-center gap-3 text-[12px]">
-                  <label className="flex items-center gap-2" title="Beats por compás">
+                  <label className="flex items-center gap-2" data-tooltip="Beats por compás">
                     <I.Beats/> <input type="number" min={1} max={16} value={beatsPerBar} onChange={(e)=>setBeatsPerBar(clamp(parseInt(e.target.value)||beatsPerBar,1,16))} className="w-16 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
                   </label>
-                  <label className="flex items-center gap-2" title="Subdivisión">
+                  <label className="flex items-center gap-2" data-tooltip="Subdivisión">
                     <I.Subdiv/> <select value={stepsPerBeat} onChange={(e)=>setStepsPerBeat(parseInt(e.target.value))} className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1">
                       <option value={1}>♩</option><option value={2}>♪</option><option value={3}>♩3</option><option value={4}>ᶿ</option>
                     </select>
                   </label>
-                  <label className="flex items-center gap-2" title="Swing">
+                  <label className="flex items-center gap-2" data-tooltip="Swing">
                     <I.Swing/> <input type="range" min={0} max={0.75} step={0.01} value={swing} onChange={(e)=>setSwing(parseFloat(e.target.value))} className={knob}/>
                   </label>
-                  <label className="flex items-center gap-2" title="Count‑In">
+                  <label className="flex items-center gap-2" data-tooltip="Count‑In">
                     ⏱️ <input type="number" min={0} max={8} value={countInBars} onChange={(e)=>setCountInBars(clamp(parseInt(e.target.value)||0,0,8))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
                   </label>
-                  <label className="flex items-center gap-2" title="Conteo por voz"><input type="checkbox" checked={voiceCount} onChange={(e)=>setVoiceCount(e.target.checked)} /></label>
+                  <label className="flex items-center gap-2" data-tooltip="Conteo por voz"><input type="checkbox" checked={voiceCount} onChange={(e)=>setVoiceCount(e.target.checked)} /></label>
                 </div>
               </div>
 
               <div className={`${card} p-3`}>
                 <div className={label}>ACCENTS</div>
-                <div className="mt-2 grid grid-cols-8 gap-1" title="Acentos por beat: Off→Beat→Accent">
+                <div className="mt-2 grid grid-cols-8 gap-1" data-tooltip="Acentos por beat: Off→Beat→Accent">
                   {Array.from({length:beatsPerBar}).map((_,i)=> (
                     <button key={i} onClick={()=>setAccentMap(m=>{ const n=m.slice(); n[i]=(n[i]+1)%3; return n; })} className={`h-8 rounded-sm border text-[11px] ${accentMap[i]===2? 'bg-black text-[color:var(--acc)] border-[color:var(--acc)]': accentMap[i]===1? 'bg-slate-800 border-slate-600 text-slate-100':'bg-slate-900 border-slate-700 text-slate-400'}`}>{i+1}</button>
                   ))}
@@ -569,10 +569,10 @@ export default function DB90InspiredMockup() {
                     <button key={k} title={k} onClick={()=>{ setCoachMode(k); if (k!=='gradual') barsElapsedRef.current=0; }} className={btn(coachMode===k)}>{k.toUpperCase()}</button>
                   ))}
                   {coachMode==='quiet' && (
-                    <label title="Silenciar 1 de cada N compases" className="text-[12px] flex items-center gap-1">N<input type="number" min={2} max={8} value={muteEvery||2} onChange={(e)=>setMuteEvery(clamp(parseInt(e.target.value)||2,2,8))} className="w-12 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/></label>
+                    <label data-tooltip="Silenciar 1 de cada N compases" className="text-[12px] flex items-center gap-1">N<input type="number" min={2} max={8} value={muteEvery||2} onChange={(e)=>setMuteEvery(clamp(parseInt(e.target.value)||2,2,8))} className="w-12 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/></label>
                   )}
                   {coachMode==='gradual' && (
-                    <div className="flex items-center gap-2 text-[12px]" title="Gradual Up/Down">
+                    <div className="flex items-center gap-2 text-[12px]" data-tooltip="Gradual Up/Down">
                       <input type="number" min={BPM_MIN} max={BPM_MAX} value={gradualFrom} onChange={(e)=>setGradualFrom(clamp(parseInt(e.target.value) || gradualFrom, BPM_MIN, BPM_MAX))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
                       →
                       <input type="number" min={BPM_MIN} max={BPM_MAX} value={gradualTo} onChange={(e)=>setGradualTo(clamp(parseInt(e.target.value) || gradualTo, BPM_MIN, BPM_MAX))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
@@ -589,21 +589,21 @@ export default function DB90InspiredMockup() {
               <div className={`${card} p-3`}>
                 <div className={label}>PATTERN</div>
                 <div className="mt-2 flex items-center gap-2 mb-2 text-[12px]">
-                  <label className="flex items-center gap-2" title="Secuenciador audible ON/OFF"><input type="checkbox" checked={seqEnabled} onChange={(e)=>setSeqEnabled(e.target.checked)} /> SEQ</label>
-                  <select title="Modo (REP silencia todo, incluso downbeats; ADD suma sobre beats)" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={seqMode} onChange={(e)=>setSeqMode(e.target.value)}>
+                  <label className="flex items-center gap-2" data-tooltip="Secuenciador audible ON/OFF"><input type="checkbox" checked={seqEnabled} onChange={(e)=>setSeqEnabled(e.target.checked)} /> SEQ</label>
+                  <select data-tooltip="Modo (REP silencia todo, incluso downbeats; ADD suma sobre beats)" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={seqMode} onChange={(e)=>setSeqMode(e.target.value)}>
                     <option value="replace">REP</option><option value="add">ADD</option>
                   </select>
-                  <select title="Categoría" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={patCat} onChange={(e)=>{ setPatCat(e.target.value); setPatName(''); }}>
+                  <select data-tooltip="Categoría" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={patCat} onChange={(e)=>{ setPatCat(e.target.value); setPatName(''); }}>
                     {Object.keys(patternLib).map(k=> <option key={k} value={k}>{k}</option>)}
                   </select>
-                  <select title="Patrón" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={patName} onChange={(e)=>setPatName(e.target.value)}>
+                  <select data-tooltip="Patrón" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1" value={patName} onChange={(e)=>setPatName(e.target.value)}>
                     <option value="">(elige)</option>
                     {Object.keys(patternLib[patCat]).map(n=> <option key={n} value={n}>{n}</option>)}
                   </select>
-                  <button title="Cargar patrón" onClick={()=>{ if (patName) applyPattern(patternLib[patCat][patName]); }} className={btn(false)}>Cargar</button>
-                  <button title="Limpiar" onClick={()=>setStepPattern(new Array(16).fill(0))} className={btn(false)}>Clear</button>
+                  <button data-tooltip="Cargar patrón" onClick={()=>{ if (patName) applyPattern(patternLib[patCat][patName]); }} className={btn(false)}>Cargar</button>
+                  <button data-tooltip="Limpiar" onClick={()=>setStepPattern(new Array(16).fill(0))} className={btn(false)}>Clear</button>
                 </div>
-                <div className="grid grid-cols-16 gap-1" title="Haz clic para activar/desactivar pasos">
+                <div className="grid grid-cols-16 gap-1" data-tooltip="Haz clic para activar/desactivar pasos">
                   {Array.from({length:16}).map((_,i)=> (
                     <button key={i} onClick={()=> setStepPattern(prev=>{ const n=prev && prev.length? prev.slice(): new Array(16).fill(0); n[i]=n[i]?0:1; return n; })} className={`h-5 rounded-sm border ${ (stepPattern && stepPattern[i])? 'bg-[color:var(--acc)] border-[color:var(--acc)] text-black':'bg-slate-900 border-slate-700'}`} title={`${i+1}`}></button>
                   ))}
@@ -618,15 +618,15 @@ export default function DB90InspiredMockup() {
               <div className={label}>TONE</div>
               <div className="flex items-center justify-between mb-2 mt-1">
                 <div className="font-semibold text-[13px]">Sine</div>
-                <label title="Tono ON/OFF" className="flex items-center gap-2 text-[12px]"><input type="checkbox" checked={toneOn} onChange={(e)=>setToneOn(e.target.checked)}/> ON</label>
+                <label data-tooltip="Tono ON/OFF" className="flex items-center gap-2 text-[12px]"><input type="checkbox" checked={toneOn} onChange={(e)=>setToneOn(e.target.checked)}/> ON</label>
               </div>
               <div className="grid grid-cols-2 gap-2 text-[12px]">
-                <label title="Afinación A4"><input type="range" min={438} max={445} value={a4} onChange={(e)=>setA4(parseInt(e.target.value))} className={knob}/><div className="text-[10px] text-slate-400">A4 {a4} Hz</div></label>
-                <label title="Nota"><input type="range" min={24} max={95} value={toneNote} onChange={(e)=>setToneNote(parseInt(e.target.value))} className={knob}/><div className="text-[10px] text-slate-400">{noteLabel} — {noteToHz(toneNote, a4)} Hz</div></label>
+                <label data-tooltip="Afinación A4"><input type="range" min={438} max={445} value={a4} onChange={(e)=>setA4(parseInt(e.target.value))} className={knob}/><div className="text-[10px] text-slate-400">A4 {a4} Hz</div></label>
+                <label data-tooltip="Nota"><input type="range" min={24} max={95} value={toneNote} onChange={(e)=>setToneNote(parseInt(e.target.value))} className={knob}/><div className="text-[10px] text-slate-400">{noteLabel} — {noteToHz(toneNote, a4)} Hz</div></label>
               </div>
               <div className="pt-2 text-[10px] text-slate-500 grid grid-cols-2 gap-2">
-                <div title="Atajos">Enter ▶/■ · Space TAP · L Lock · ↑↓±1 · ←→±5</div>
-                <div title="Coach">OFF · TIMECHECK · QUIET · GRADUAL</div>
+                <div data-tooltip="Atajos">Enter ▶/■ · Space TAP · L Lock · ↑↓±1 · ←→±5</div>
+                <div data-tooltip="Coach">OFF · TIMECHECK · QUIET · GRADUAL</div>
               </div>
             </div>
 
@@ -640,10 +640,10 @@ export default function DB90InspiredMockup() {
               {activeTab==='presets' ? (
                 <div className="space-y-2">
                   <div className="flex gap-2">
-                    <input title="Nombre preset" value={presetName} onChange={(e)=>setPresetName(e.target.value)} placeholder="Nombre" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-2 flex-1"/>
-                    <button title="Guardar preset" onClick={savePreset} className={btn(false)}><I.Save/></button>
-                    <button title="Exportar JSON" onClick={exportPresets} className={btn(false)}><I.Download/></button>
-                    <label title="Importar JSON" className={`${btn(false)} cursor-pointer`}><I.Upload/><input type="file" accept="application/json" className="hidden" onChange={(e)=>{ const f=e.target.files && e.target.files[0]; if (f) importPresets(f); }}/></label>
+                    <input data-tooltip="Nombre preset" value={presetName} onChange={(e)=>setPresetName(e.target.value)} placeholder="Nombre" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-2 flex-1"/>
+                    <button data-tooltip="Guardar preset" onClick={savePreset} className={btn(false)}><I.Save/></button>
+                    <button data-tooltip="Exportar JSON" onClick={exportPresets} className={btn(false)}><I.Download/></button>
+                    <label data-tooltip="Importar JSON" className={`${btn(false)} cursor-pointer`}><I.Upload/><input type="file" accept="application/json" className="hidden" onChange={(e)=>{ const f=e.target.files && e.target.files[0]; if (f) importPresets(f); }}/></label>
                   </div>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 max-h-44 overflow-auto">
                     {presets.map((p,i)=> (
@@ -654,16 +654,16 @@ export default function DB90InspiredMockup() {
               ) : (
                 <div className="space-y-2">
                   <div className="flex gap-2">
-                    <input title="Nombre tema" value={presetName} onChange={(e)=>setPresetName(e.target.value)} placeholder="Tema" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-2 flex-1"/>
-                    <button title="Añadir a setlist" onClick={addToSetlist} className={btn(false)}><I.Plus/></button>
+                    <input data-tooltip="Nombre tema" value={presetName} onChange={(e)=>setPresetName(e.target.value)} placeholder="Tema" className="bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-2 flex-1"/>
+                    <button data-tooltip="Añadir a setlist" onClick={addToSetlist} className={btn(false)}><I.Plus/></button>
                   </div>
                   <ul className="max-h-44 overflow-auto divide-y divide-slate-800">
                     {setlist.map((s,i)=> (
                       <li key={i} className="flex items-center justify-between py-2">
                         <div className="text-[12px] truncate" title={`${s.name} — ${s.bpm} BPM`}>{i+1}. {s.name} {s.seqEnabled ? '•SEQ' : ''}</div>
                         <div className="flex items-center gap-2">
-                          <button title="Cargar" onClick={()=>loadPreset(s)} className="text-[11px]">⤴︎</button>
-                          <button title="Quitar" onClick={()=>removeFromSetlist(i)} className="text-[11px] text-red-400"><I.Close/></button>
+                          <button data-tooltip="Cargar" onClick={()=>loadPreset(s)} className="text-[11px]">⤴︎</button>
+                          <button data-tooltip="Quitar" onClick={()=>removeFromSetlist(i)} className="text-[11px] text-red-400"><I.Close/></button>
                         </div>
                       </li>
                     ))}

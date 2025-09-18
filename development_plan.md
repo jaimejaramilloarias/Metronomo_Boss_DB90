@@ -36,10 +36,12 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 ---
 
 ## Épica 2 · Tooltips accesibles
-- **T2.1 Componentización**  
-  - Implementar helper JS para mostrar/ocultar tooltips sin retraso.  
+- [x] **T2.1 Componentización**
+  - Implementar helper JS para mostrar/ocultar tooltips sin retraso.
   - Soportar focus/blur y toque (toggle temporal).
-- **T2.2 Cobertura total**  
+  - ✅ `TooltipProvider` centraliza listeners (`pointer`, `focus`, `touch`, `Escape`) y renderiza un overlay accesible via portal con `aria-describedby` automático.
+  - ✅ Helper `tooltipProps`/`useTooltipAnchor` permiten añadir atributos declarativos.
+- **T2.2 Cobertura total**
   - Añadir tooltips a todos los controles visibles (Tap, Lock, perfiles, sliders, patrones, presets, tono, Coach, etc.).  
   - Revisar contraste y posición responsive.
 - **T2.3 QA accesibilidad**  
