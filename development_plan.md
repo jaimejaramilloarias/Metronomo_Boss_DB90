@@ -90,15 +90,18 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 ---
 
 ## Épica 5 · CRUD de patrones de usuario
-- **T5.1 Modelo de almacenamiento**  
-  - Definir estructura `db90_patterns` en `localStorage` y migración inicial.  
+- [x] **T5.1 Modelo de almacenamiento**
+  - Definir estructura `db90_patterns` en `localStorage` y migración inicial.
   - Separar librería "factory" de patrones del usuario.
-- **T5.2 UI de gestión**  
-  - Botones para guardar, guardar como, renombrar, eliminar (con confirmación).  
+  - ✅ Persistencia versionada (`db90_patterns_v1`) con migración automática de arreglos legacy y límite de 64 entradas.
+- [x] **T5.2 UI de gestión**
+  - Botones para guardar, guardar como, renombrar, eliminar (con confirmación).
   - Indicadores de patrón activo/guardado.
-- **T5.3 Integración con secuenciador**  
-  - Cargar patrones guardados respetando figures/accents/mode.  
+  - ✅ Panel dedicado con input nombrable, acciones Guardar/Guardar como/Renombrar/Eliminar y select de patrones con tooltip.
+- [x] **T5.3 Integración con secuenciador**
+  - Cargar patrones guardados respetando figures/accents/mode.
   - Manejar validaciones (nombres duplicados, límites).
+  - ✅ Carga restaura `seqMode`/`seqEnabled`, sincroniza figuras/accentos y marca estado modificado; valida duplicados y tope.
 
 ---
 
