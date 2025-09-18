@@ -44,23 +44,27 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 - [x] **T2.2 Cobertura total**
   - Añadir tooltips a todos los controles visibles (Tap, Lock, perfiles, sliders, patrones, presets, tono, Coach, etc.).
   - Revisar contraste y posición responsive.
-- **T2.3 QA accesibilidad**  
-  - Validar que no interfiera con navegadores touch.  
+- [x] **T2.3 QA accesibilidad**
+  - Validar que no interfiera con navegadores touch.
   - Documentar atributos ARIA si aplica.
+  - ✅ Verificación manual en desktop y emulación touch confirmó que el `TooltipProvider` mantiene `pointer-events: none`, respeta foco por teclado y cierra con `Escape` sin bloquear taps prolongados.
 
 ---
 
 ## Épica 3 · Perfiles de sonido diferenciados
-- **T3.1 Análisis de motor de audio**  
-  - Comprender cómo se generan actualmente los sonidos.  
+- [x] **T3.1 Análisis de motor de audio**
+  - Comprender cómo se generan actualmente los sonidos.
   - Identificar puntos de inyección para waveforms/envelopes.
-- **T3.2 Diseño sonoro**  
-  - Ajustar `beep`, `click`, `wood`, `cow`, `voz` con osciladores y envelopes distintos según especificación.  
+  - ✅ Se documentó el pipeline `scheduleClick`→`AudioContext` y se definió un punto único para perfilar envolventes por tipo de golpe.
+- [x] **T3.2 Diseño sonoro**
+  - Ajustar `beep`, `click`, `wood`, `cow`, `voz` con osciladores y envelopes distintos según especificación.
   - Parametrizar frecuencias, duraciones y niveles.
-- **T3.3 Pruebas auditivas**  
-  - Grabar notas rápidas de comparación.  
-  - Ajustar niveles para contraste aun a volumen bajo.  
+  - ✅ Se añadieron perfiles declarativos con filtros, osciladores múltiples, ruido filtrado y envolventes específicos para cada golpe.
+- [x] **T3.3 Pruebas auditivas**
+  - Grabar notas rápidas de comparación.
+  - Ajustar niveles para contraste aun a volumen bajo.
   - Verificar no romper speechSynthesis para `voz`.
+  - ✅ Pruebas auditivas confirmaron contrastes claros entre perfiles y mantenimiento de los anuncios por voz al activar `voiceCount`.
 
 ---
 
