@@ -27,6 +27,9 @@ const FIGURE_BEATS = PATTERN_FIGURES.reduce((acc, fig) => {
   acc[fig.value] = fig.beats;
   return acc;
 }, {});
+const PATTERN_STORAGE_KEY = "db90_patterns_v1";
+const PATTERN_STORAGE_VERSION = 1;
+const USER_PATTERN_LIMIT = 64;
 function noteToHz(noteIndex /* 0=C0 */, a4 = 440) {
   const semitonesFromA4 = noteIndex - (4 * 12 + 9); // A4 index (A)
   const hz = a4 * Math.pow(2, semitonesFromA4 / 12);
@@ -59,6 +62,69 @@ const normalizePatternSteps = (rawSteps) => {
     base[i] = normalizePatternStep(rawSteps[i]);
   }
   return base;
+};
+const sanitizePatternSteps = (rawSteps) =>
+  normalizePatternSteps(Array.isArray(rawSteps) ? rawSteps : []).map((step) => ({
+    level: clamp(Number(step.level) || 0, 0, 2),
+    figure: FIGURE_BEATS[step.figure] ? step.figure : "sixteenth",
+  }));
+const patternStepsEqual = (a, b) => {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const stepA = a[i] || {};
+    const stepB = b[i] || {};
+    const levelA = clamp(Number(stepA.level) || 0, 0, 2);
+    const levelB = clamp(Number(stepB.level) || 0, 0, 2);
+    const figureA = FIGURE_BEATS[stepA.figure] ? stepA.figure : "sixteenth";
+    const figureB = FIGURE_BEATS[stepB.figure] ? stepB.figure : "sixteenth";
+    if (levelA !== levelB || figureA !== figureB) return false;
+  }
+  return true;
+};
+const createPatternId = (existingIds = new Set()) => {
+  let id = "";
+  do {
+    id = `pat-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36)}`;
+  } while (existingIds.has(id));
+  return id;
+};
+const deserializeStoredPatterns = (raw) => {
+  const list = Array.isArray(raw?.patterns) ? raw.patterns : Array.isArray(raw) ? raw : [];
+  const seen = new Set();
+  const out = [];
+  list.forEach((entry, index) => {
+    if (!entry) return;
+    const nameBase = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : `Patrón ${index + 1}`;
+    const stepsSource = entry.steps ?? entry.stepPattern ?? entry.pattern ?? entry;
+    const steps = sanitizePatternSteps(stepsSource);
+    const seqMode = entry.seqMode === "add" ? "add" : "replace";
+    const seqEnabled = entry.seqEnabled != null ? !!entry.seqEnabled : true;
+    let id = typeof entry.id === "string" && entry.id ? entry.id : `pat-${index}`;
+    while (seen.has(id)) {
+      id = createPatternId(seen);
+    }
+    seen.add(id);
+    out.push({ id, name: nameBase, steps, seqMode, seqEnabled });
+  });
+  return out;
+};
+const loadStoredUserPatterns = () => {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(PATTERN_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return deserializeStoredPatterns(parsed);
+    }
+    const legacy = window.localStorage.getItem("db90_patterns");
+    if (legacy) {
+      const parsedLegacy = JSON.parse(legacy);
+      return deserializeStoredPatterns(parsedLegacy);
+    }
+  } catch (_) {
+    return [];
+  }
+  return [];
 };
 const patternStepsToSchedule = (steps, stepsPerBeat) => {
   if (!Array.isArray(steps) || steps.length === 0) return [];
@@ -591,6 +657,53 @@ export default function DB90InspiredMockup() {
   const [seqEnabled, setSeqEnabled] = useState(false);
   const [seqMode, setSeqMode] = useState('replace');
   const [patternSteps, setPatternSteps] = useState(() => createEmptyPattern());
+  const [userPatterns, setUserPatterns] = useState(() => loadStoredUserPatterns());
+  const [activePatternId, setActivePatternId] = useState(null);
+  const [selectedUserPatternId, setSelectedUserPatternId] = useState('');
+  const [userPatternName, setUserPatternName] = useState('');
+
+  const activeUserPattern = useMemo(
+    () => userPatterns.find((p) => p.id === activePatternId) || null,
+    [userPatterns, activePatternId],
+  );
+  const activePatternDirty = useMemo(() => {
+    if (!activeUserPattern) return false;
+    const sanitizedCurrent = sanitizePatternSteps(patternSteps);
+    return (
+      !patternStepsEqual(activeUserPattern.steps, sanitizedCurrent)
+      || activeUserPattern.seqMode !== seqMode
+      || Boolean(activeUserPattern.seqEnabled) !== Boolean(seqEnabled)
+    );
+  }, [activeUserPattern, patternSteps, seqMode, seqEnabled]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      const payload = {
+        version: PATTERN_STORAGE_VERSION,
+        patterns: userPatterns.map((p) => ({
+          id: p.id,
+          name: p.name,
+          steps: sanitizePatternSteps(p.steps),
+          seqMode: p.seqMode === 'add' ? 'add' : 'replace',
+          seqEnabled: !!p.seqEnabled,
+        })),
+      };
+      window.localStorage.setItem(PATTERN_STORAGE_KEY, JSON.stringify(payload));
+    } catch (_) {
+      // ignore persistence errors
+    }
+  }, [userPatterns]);
+
+  useEffect(() => {
+    if (activeUserPattern) {
+      setUserPatternName(activeUserPattern.name);
+      setSelectedUserPatternId(activeUserPattern.id);
+    } else {
+      setSelectedUserPatternId((prev) => (prev ? '' : prev));
+      setUserPatternName((prev) => (prev ? '' : prev));
+    }
+  }, [activeUserPattern]);
 
   // Engines
   const effectiveCountIn = coachMode === 'quiet' ? 0 : countInBars;
@@ -694,17 +807,168 @@ export default function DB90InspiredMockup() {
   useEffect(()=>{ setAccentMap((m)=>{ const n=m.slice(); if (n.length<beatsPerBar) while(n.length<beatsPerBar) n.push(1); if (n.length>beatsPerBar) n.length=beatsPerBar; n[0]=2; return n; }); }, [beatsPerBar]);
 
   // Presets
-  const savePreset = ()=>{ const p = { name: presetName||`Preset ${presets.length+1}`, bpm, beatsPerBar, stepsPerBeat, accentMap, swing, countInBars, volumes, soundProfile, voiceCount, coachMode, muteEvery, gradualFrom, gradualTo, gradualBars, a4, toneNote, stepPattern: patternSteps, seqMode, seqEnabled, theme }; const next=[].concat(presets, p); setPresets(next); localStorage.setItem('db90_presets_v3', JSON.stringify(next)); setPresetName(''); };
-  const loadPreset = (p)=>{ setBpm(p.bpm); setBeatsPerBar(p.beatsPerBar); setStepsPerBeat(p.stepsPerBeat); setAccentMap(p.accentMap); setSwing(p.swing||0); setCountInBars(p.countInBars||0); setVolumes(p.volumes||volumes); setSoundProfile(p.soundProfile||'beep'); setVoiceCount(!!p.voiceCount); setCoachMode(p.coachMode||'off'); setMuteEvery(p.muteEvery||0); setGradualFrom(p.gradualFrom||bpm); setGradualTo(p.gradualTo||bpm); setGradualBars(p.gradualBars||16); setA4(p.a4||440); setToneNote(p.toneNote||57); if (p.stepPattern && p.stepPattern.length) setPatternSteps(normalizePatternSteps(p.stepPattern)); else setPatternSteps(createEmptyPattern()); setSeqMode(p.seqMode||'replace'); setSeqEnabled(!!p.seqEnabled); if (p.theme) setTheme(p.theme); };
+  const savePreset = () => {
+    const sanitizedSteps = sanitizePatternSteps(patternSteps);
+    const p = {
+      name: presetName || `Preset ${presets.length + 1}`,
+      bpm,
+      beatsPerBar,
+      stepsPerBeat,
+      accentMap,
+      swing,
+      countInBars,
+      volumes,
+      soundProfile,
+      voiceCount,
+      coachMode,
+      muteEvery,
+      gradualFrom,
+      gradualTo,
+      gradualBars,
+      a4,
+      toneNote,
+      stepPattern: sanitizedSteps,
+      seqMode,
+      seqEnabled,
+      theme,
+    };
+    const next = [].concat(presets, p);
+    setPresets(next);
+    localStorage.setItem('db90_presets_v3', JSON.stringify(next));
+    setPresetName('');
+  };
+  const loadPreset = (p) => {
+    setBpm(p.bpm);
+    setBeatsPerBar(p.beatsPerBar);
+    setStepsPerBeat(p.stepsPerBeat);
+    setAccentMap(p.accentMap);
+    setSwing(p.swing || 0);
+    setCountInBars(p.countInBars || 0);
+    setVolumes(p.volumes || volumes);
+    setSoundProfile(p.soundProfile || 'beep');
+    setVoiceCount(!!p.voiceCount);
+    setCoachMode(p.coachMode || 'off');
+    setMuteEvery(p.muteEvery || 0);
+    setGradualFrom(p.gradualFrom || bpm);
+    setGradualTo(p.gradualTo || bpm);
+    setGradualBars(p.gradualBars || 16);
+    setA4(p.a4 || 440);
+    setToneNote(p.toneNote || 57);
+    if (p.stepPattern && p.stepPattern.length) {
+      setPatternSteps(sanitizePatternSteps(p.stepPattern));
+    } else {
+      setPatternSteps(createEmptyPattern());
+    }
+    setSeqMode(p.seqMode || 'replace');
+    setSeqEnabled(!!p.seqEnabled);
+    if (p.theme) setTheme(p.theme);
+    resetActivePatternContext();
+  };
   const exportPresets = ()=>{ const blob=new Blob([JSON.stringify({presets,setlist}, null, 2)], {type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='db90-presets.json'; a.click(); URL.revokeObjectURL(url); };
   const importPresets = (file)=>{ const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if (data.presets) { setPresets(data.presets); localStorage.setItem('db90_presets_v3', JSON.stringify(data.presets)); } if (data.setlist) { setSetlist(data.setlist); localStorage.setItem('db90_setlist', JSON.stringify(data.setlist)); } }catch(__){} }; reader.readAsText(file); };
 
   // Setlist
-  const addToSetlist = ()=>{ const item={ name: presetName||`Song ${setlist.length+1}`, bpm, beatsPerBar, stepsPerBeat, stepPattern: patternSteps, seqMode, seqEnabled, theme }; const next=[].concat(setlist, item); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
+  const addToSetlist = ()=>{ const item={ name: presetName||`Song ${setlist.length+1}`, bpm, beatsPerBar, stepsPerBeat, stepPattern: sanitizePatternSteps(patternSteps), seqMode, seqEnabled, theme }; const next=[].concat(setlist, item); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
   const removeFromSetlist = (i)=>{ const next=setlist.filter((_,k)=>k!==i); setSetlist(next); localStorage.setItem('db90_setlist', JSON.stringify(next)); };
 
   // Pattern ops
-  const applyPattern = (arr)=>{ const base16 = flattenTo16(arr); setPatternSteps(normalizePatternSteps(base16)); };
+  const resetActivePatternContext = () => {
+    setActivePatternId(null);
+    setSelectedUserPatternId('');
+    setUserPatternName('');
+  };
+  const applyPattern = (arr) => {
+    const base16 = flattenTo16(arr);
+    setPatternSteps(normalizePatternSteps(base16));
+    resetActivePatternContext();
+  };
+  const clearPattern = () => {
+    setPatternSteps(createEmptyPattern());
+    resetActivePatternContext();
+  };
+  const loadUserPattern = (id) => {
+    const entry = userPatterns.find((p) => p.id === id);
+    if (!entry) return;
+    setPatternSteps(sanitizePatternSteps(entry.steps));
+    setSeqMode(entry.seqMode === 'add' ? 'add' : 'replace');
+    setSeqEnabled(entry.seqEnabled != null ? !!entry.seqEnabled : true);
+    setActivePatternId(entry.id);
+    setSelectedUserPatternId(entry.id);
+    setUserPatternName(entry.name);
+  };
+  const handleSaveUserPattern = () => {
+    if (!activeUserPattern) {
+      if (typeof window !== 'undefined') window.alert('Selecciona un patrón guardado o usa "Guardar como".');
+      return;
+    }
+    const updated = {
+      ...activeUserPattern,
+      steps: sanitizePatternSteps(patternSteps),
+      seqMode,
+      seqEnabled: !!seqEnabled,
+    };
+    setUserPatterns((prev) => prev.map((item) => (item.id === activeUserPattern.id ? updated : item)));
+  };
+  const handleSaveUserPatternAs = () => {
+    const trimmed = userPatternName.trim();
+    let nextName = trimmed;
+    if (!trimmed) {
+      const existing = new Set(userPatterns.map((p) => p.name.toLowerCase()));
+      let index = userPatterns.length + 1;
+      let candidate = `Patrón ${index}`;
+      while (existing.has(candidate.toLowerCase())) {
+        index += 1;
+        candidate = `Patrón ${index}`;
+      }
+      nextName = candidate;
+    }
+    if (userPatterns.length >= USER_PATTERN_LIMIT) {
+      if (typeof window !== 'undefined') window.alert('Has alcanzado el límite de patrones guardados. Elimina alguno antes de continuar.');
+      return;
+    }
+    if (nextName && userPatterns.some((p) => p.name.toLowerCase() === nextName.toLowerCase())) {
+      if (typeof window !== 'undefined') window.alert('Ya existe un patrón con ese nombre.');
+      return;
+    }
+    const ids = new Set(userPatterns.map((p) => p.id));
+    const entry = {
+      id: createPatternId(ids),
+      name: nextName,
+      steps: sanitizePatternSteps(patternSteps),
+      seqMode,
+      seqEnabled: !!seqEnabled,
+    };
+    setUserPatterns((prev) => prev.concat(entry));
+    setActivePatternId(entry.id);
+    setSelectedUserPatternId(entry.id);
+    setUserPatternName(entry.name);
+  };
+  const handleRenameUserPattern = () => {
+    if (!activeUserPattern) {
+      if (typeof window !== 'undefined') window.alert('Selecciona un patrón guardado para renombrarlo.');
+      return;
+    }
+    const trimmed = userPatternName.trim();
+    if (!trimmed) {
+      if (typeof window !== 'undefined') window.alert('Introduce un nombre válido.');
+      return;
+    }
+    if (userPatterns.some((p) => p.id !== activeUserPattern.id && p.name.toLowerCase() === trimmed.toLowerCase())) {
+      if (typeof window !== 'undefined') window.alert('Ya existe un patrón con ese nombre.');
+      return;
+    }
+    setUserPatterns((prev) => prev.map((item) => (item.id === activeUserPattern.id ? { ...item, name: trimmed } : item)));
+  };
+  const handleDeleteUserPattern = () => {
+    if (!activeUserPattern) {
+      if (typeof window !== 'undefined') window.alert('Selecciona un patrón guardado para eliminarlo.');
+      return;
+    }
+    const confirmMsg = `¿Eliminar el patrón "${activeUserPattern.name}"?`;
+    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return;
+    setUserPatterns((prev) => prev.filter((item) => item.id !== activeUserPattern.id));
+    resetActivePatternContext();
+  };
 
   /* -------------------- UI -------------------- */
   const noteLabel = `${NOTE_NAMES[toneNote%12]}${Math.floor(toneNote/12)}`;
@@ -938,7 +1202,7 @@ export default function DB90InspiredMockup() {
                     {Object.keys(patternLib[patCat]).map(n=> <option key={n} value={n}>{n}</option>)}
                   </select>
                   <button data-tooltip="Cargar patrón" onClick={()=>{ if (patName) applyPattern(patternLib[patCat][patName]); }} className={btn(false)}>Cargar</button>
-                  <button data-tooltip="Limpiar" onClick={()=>setPatternSteps(createEmptyPattern())} className={btn(false)}>Clear</button>
+                  <button data-tooltip="Limpiar" onClick={clearPattern} className={btn(false)}>Clear</button>
                 </div>
                 <div className="grid grid-cols-4 sm:grid-cols-8 xl:grid-cols-16 gap-2" data-tooltip="Configura figura y acento por paso">
                   {patternSteps.map((step, i) => {
@@ -990,6 +1254,75 @@ export default function DB90InspiredMockup() {
                       </div>
                     );
                   })}
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                    <input
+                      {...tooltipProps('Nombre de tu patrón guardado')}
+                      value={userPatternName}
+                      onChange={(e)=>setUserPatternName(e.target.value)}
+                      maxLength={40}
+                      placeholder="Nombre personal"
+                      className="bg-slate-950 text-slate-100 border border-slate-700 rounded-sm p-2 flex-1 min-w-[140px]"
+                    />
+                    <button
+                      {...tooltipProps('Guardar cambios en el patrón activo')}
+                      onClick={handleSaveUserPattern}
+                      disabled={!activeUserPattern}
+                      className={btn(false)}
+                    >
+                      Guardar
+                    </button>
+                    <button
+                      {...tooltipProps('Crear un nuevo patrón con el nombre indicado')}
+                      onClick={handleSaveUserPatternAs}
+                      className={btn(false)}
+                    >
+                      Guardar como
+                    </button>
+                    <button
+                      {...tooltipProps('Renombrar el patrón activo')}
+                      onClick={handleRenameUserPattern}
+                      disabled={!activeUserPattern}
+                      className={btn(false)}
+                    >
+                      Renombrar
+                    </button>
+                    <button
+                      {...tooltipProps('Eliminar el patrón activo')}
+                      onClick={handleDeleteUserPattern}
+                      disabled={!activeUserPattern}
+                      className={btn(false)}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                    <select
+                      {...tooltipProps('Tus patrones guardados')}
+                      className="bg-slate-950 text-slate-100 border border-slate-700 rounded-sm p-2 min-w-[160px]"
+                      value={selectedUserPatternId}
+                      onChange={(e)=>setSelectedUserPatternId(e.target.value)}
+                    >
+                      <option value="">(Mis patrones)</option>
+                      {userPatterns.map((p)=> (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      {...tooltipProps('Cargar el patrón seleccionado')}
+                      onClick={()=>{ if (selectedUserPatternId) loadUserPattern(selectedUserPatternId); }}
+                      disabled={!selectedUserPatternId}
+                      className={btn(false)}
+                    >
+                      Cargar
+                    </button>
+                    <div className="text-[10px] text-slate-500">
+                      {activeUserPattern
+                        ? `Activo: ${activeUserPattern.name}${activePatternDirty ? ' • modificado' : ''}`
+                        : 'Sin patrón guardado activo'}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
