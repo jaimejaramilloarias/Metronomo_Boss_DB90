@@ -14,6 +14,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 /* -------------------- Utils -------------------- */
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const BPM_MIN = 30;
+const BPM_MAX = 250;
 function noteToHz(noteIndex /* 0=C0 */, a4 = 440) {
   const semitonesFromA4 = noteIndex - (4 * 12 + 9); // A4 index (A)
   const hz = a4 * Math.pow(2, semitonesFromA4 / 12);
@@ -205,6 +207,7 @@ function useMIDIClock({ running, bpm }) {
 export default function DB90InspiredMockup() {
   // Tempo & meter
   const [bpm, setBpm] = useState(120);
+  const [bpmInput, setBpmInput] = useState('120');
   const [beatsPerBar, setBeatsPerBar] = useState(4);
   const [stepsPerBeat, setStepsPerBeat] = useState(1);
   const [accentMap, setAccentMap] = useState([2,1,1,1]);
@@ -298,14 +301,88 @@ export default function DB90InspiredMockup() {
   useTone({ enabled: toneOn, noteHz: noteToHz(toneNote, a4), volume });
   useMIDIClock({ running, bpm });
   useEffect(() => { runSelfTests(); }, []);
+  useEffect(() => { setBpmInput(String(bpm)); }, [bpm]);
 
   // Hotkeys / Tap
-  useEffect(()=>{ const h=(e)=>{ if (e.code==='Space') { e.preventDefault(); tap(); } else if (e.code==='Enter') { e.preventDefault(); setRunning(r=>!r); } else if (e.code==='ArrowUp') { setBpm(b=>clamp(b+1,30,250)); } else if (e.code==='ArrowDown') { setBpm(b=>clamp(b-1,30,250)); } else if (e.code==='ArrowRight') { setBpm(b=>clamp(b+5,30,250)); } else if (e.code==='ArrowLeft') { setBpm(b=>clamp(b-5,30,250)); } else if (e.code==='KeyL') { setTempoLocked(l=>!l); } }; window.addEventListener('keydown', h); return ()=>window.removeEventListener('keydown', h); }, []);
+  useEffect(() => {
+    const h = (e) => {
+      const target = e.target;
+      if (target instanceof HTMLElement) {
+        if (target.closest('input, select, textarea') || target.isContentEditable) {
+          return;
+        }
+      }
+      if (e.code === 'Space') {
+        if (target instanceof HTMLElement && target.closest('button')) return;
+        e.preventDefault();
+        tap();
+      } else if (e.code === 'Enter') {
+        e.preventDefault();
+        setRunning((r) => !r);
+      } else if (e.code === 'ArrowUp') {
+        setBpm((b) => clamp(b + 1, BPM_MIN, BPM_MAX));
+      } else if (e.code === 'ArrowDown') {
+        setBpm((b) => clamp(b - 1, BPM_MIN, BPM_MAX));
+      } else if (e.code === 'ArrowRight') {
+        setBpm((b) => clamp(b + 5, BPM_MIN, BPM_MAX));
+      } else if (e.code === 'ArrowLeft') {
+        setBpm((b) => clamp(b - 5, BPM_MIN, BPM_MAX));
+      } else if (e.code === 'KeyL') {
+        setTempoLocked((l) => !l);
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
 
   const tap = ()=>{
     const t = window.performance.now(); const arr = [].concat(tapsRef.current.filter(x=> t-x < 6000), t); tapsRef.current = arr;
-    if (arr.length>=2) { const ivals = arr.slice(1).map((v,i)=> v - arr[i]); const w = Math.min(ivals.length, 6); const recent = ivals.slice(-w); const avg = recent.reduce((a,b)=>a+b,0)/recent.length; const nbpm = clamp(Math.round(60000/avg),30,250); if (!tempoLocked) setBpm(nbpm);
+    if (arr.length>=2) { const ivals = arr.slice(1).map((v,i)=> v - arr[i]); const w = Math.min(ivals.length, 6); const recent = ivals.slice(-w); const avg = recent.reduce((a,b)=>a+b,0)/recent.length; const nbpm = clamp(Math.round(60000/avg), BPM_MIN, BPM_MAX); if (!tempoLocked) setBpm(nbpm);
       if (coachMode==='timecheck' && running) { const spbMs=(60/bpm)*1000; const stepMs=spbMs/stepsPerBeat; const phase=t%stepMs; const err=(phase<stepMs/2)?phase:phase-stepMs; setTapStats((s)=>{ const n=s.count+1; const avgm=(s.avgMs*s.count+err)/n; const varAcc=(s.stdMs*s.stdMs*s.count + (err-avgm)*(err-avgm))/n; const std=Math.sqrt(varAcc); const score=clamp(Math.round(100 - Math.min(100, Math.abs(avgm)/2 + std/4)),0,100); return { count:n, avgMs:Math.round(avgm*10)/10, stdMs:Math.round(std*10)/10, lastMs:Math.round(err*10)/10, score }; }); }
+    }
+  };
+
+  const adjustBpm = (delta) => {
+    if (tempoLocked) return;
+    setBpm((current) => clamp(Math.round(current + delta), BPM_MIN, BPM_MAX));
+  };
+  const handleBpmSliderChange = (value) => {
+    if (tempoLocked) return;
+    const numeric = typeof value === 'number' ? value : parseInt(value, 10);
+    if (!Number.isNaN(numeric)) {
+      setBpm(clamp(Math.round(numeric), BPM_MIN, BPM_MAX));
+    }
+  };
+  const commitBpmInput = (value = bpmInput) => {
+    if (tempoLocked) {
+      setBpmInput(String(bpm));
+      return;
+    }
+    const parsed = parseInt(value, 10);
+    if (Number.isNaN(parsed)) {
+      setBpmInput(String(bpm));
+      return;
+    }
+    const clamped = clamp(parsed, BPM_MIN, BPM_MAX);
+    setBpm(clamped);
+    setBpmInput(String(clamped));
+  };
+  const handleBpmInputChange = (e) => {
+    setBpmInput(e.target.value);
+  };
+  const handleBpmInputBlur = () => {
+    commitBpmInput();
+  };
+  const handleBpmInputKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      commitBpmInput();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      setBpmInput(String(bpm));
+      e.currentTarget.blur();
     }
   };
 
@@ -331,7 +408,7 @@ export default function DB90InspiredMockup() {
   // Theme (retro)
   const bg = "min-h-screen w-full bg-slate-950 text-slate-100";
   const card = "bg-slate-900 border border-slate-700 rounded-sm";
-  const btn = (active) => `px-3 py-2 rounded-sm border text-sm tracking-tight ${active? 'bg-slate-100 text-slate-900 border-slate-100':'bg-slate-900 text-slate-100 border-slate-600 hover:bg-slate-800'}`;
+  const btn = (active) => `px-3 py-2 rounded-sm border text-sm tracking-tight transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none ${active? 'bg-slate-100 text-slate-900 border-slate-100':'bg-slate-900 text-slate-100 border-slate-600 hover:bg-slate-800'}`;
   const knob = "appearance-none w-full h-1 bg-slate-700";
   const label = "text-[10px] text-slate-400 tracking-[0.2em]";
 
@@ -372,7 +449,27 @@ export default function DB90InspiredMockup() {
 
             {/* Display */}
             <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-              <div className="md:col-span-2 relative overflow-hidden rounded-sm bg-black p-4 border border-slate-800 flex flex-col items-center justify-center">
+              <div
+                className="md:col-span-2 relative overflow-hidden rounded-sm bg-black p-4 border flex flex-col items-center justify-center"
+                style={{
+                  borderColor: tempoLocked ? 'var(--acc)' : '#1e293b',
+                  boxShadow: tempoLocked ? '0 0 0 1px var(--acc)' : 'none',
+                  transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                }}
+                aria-live="polite"
+              >
+                <div className="absolute top-2 right-2 flex items-center gap-2 text-[10px] tracking-[0.3em] text-slate-500">
+                  <div
+                    className="w-2 h-2 rounded-full transition-all"
+                    style={{
+                      backgroundColor: tempoLocked ? 'var(--acc)' : '#1f2937',
+                      boxShadow: tempoLocked ? '0 0 8px var(--acc)' : 'none',
+                    }}
+                    aria-hidden="true"
+                  />
+                  <span className={tempoLocked ? 'text-[color:var(--acc)]' : ''}>LOCK</span>
+                </div>
+                <span className="sr-only">{tempoLocked ? 'Tempo bloqueado' : 'Tempo libre'}</span>
                 <SevenSegNumber value={bpm} color={accent} on={true} />
                 {/* LED dots (top) */}
                 <div className="mt-2 flex items-center justify-center gap-2">
@@ -385,6 +482,39 @@ export default function DB90InspiredMockup() {
                   {Array.from({length:beatsPerBar}).map((_,i)=> (
                     <div key={i} className="h-2" style={{backgroundColor: i===currentBeat? accent : '#1f2937'}}/>
                   ))}
+                </div>
+                <div className="mt-4 w-full space-y-3">
+                  <div className={`${label} text-center`}>BPM CONTROL</div>
+                  <input
+                    title="Control de BPM"
+                    type="range"
+                    min={BPM_MIN}
+                    max={BPM_MAX}
+                    step={1}
+                    value={bpm}
+                    onChange={(e)=>handleBpmSliderChange(e.target.value)}
+                    disabled={tempoLocked}
+                    className={`${knob} h-2`}
+                    style={{ accentColor: 'var(--acc)' }}
+                  />
+                  <div className="flex flex-wrap items-center justify-center gap-2 text-[12px]">
+                    <button title="Restar 5 BPM" onClick={()=>adjustBpm(-5)} disabled={tempoLocked} className={btn(false)}>−5</button>
+                    <button title="Restar 1 BPM" onClick={()=>adjustBpm(-1)} disabled={tempoLocked} className={btn(false)}>−1</button>
+                    <input
+                      title="Editar BPM"
+                      type="number"
+                      min={BPM_MIN}
+                      max={BPM_MAX}
+                      value={bpmInput}
+                      onChange={handleBpmInputChange}
+                      onBlur={handleBpmInputBlur}
+                      onKeyDown={handleBpmInputKeyDown}
+                      disabled={tempoLocked}
+                      className="w-20 bg-slate-950 text-slate-100 border border-slate-700 rounded-sm p-2 text-center text-[14px]"
+                    />
+                    <button title="Sumar 1 BPM" onClick={()=>adjustBpm(1)} disabled={tempoLocked} className={btn(false)}>+1</button>
+                    <button title="Sumar 5 BPM" onClick={()=>adjustBpm(5)} disabled={tempoLocked} className={btn(false)}>+5</button>
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">
@@ -443,9 +573,9 @@ export default function DB90InspiredMockup() {
                   )}
                   {coachMode==='gradual' && (
                     <div className="flex items-center gap-2 text-[12px]" title="Gradual Up/Down">
-                      <input type="number" min={30} max={250} value={gradualFrom} onChange={(e)=>setGradualFrom(clamp(parseInt(e.target.value)||gradualFrom,30,250))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
+                      <input type="number" min={BPM_MIN} max={BPM_MAX} value={gradualFrom} onChange={(e)=>setGradualFrom(clamp(parseInt(e.target.value) || gradualFrom, BPM_MIN, BPM_MAX))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
                       →
-                      <input type="number" min={30} max={250} value={gradualTo} onChange={(e)=>setGradualTo(clamp(parseInt(e.target.value)||gradualTo,30,250))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
+                      <input type="number" min={BPM_MIN} max={BPM_MAX} value={gradualTo} onChange={(e)=>setGradualTo(clamp(parseInt(e.target.value) || gradualTo, BPM_MIN, BPM_MAX))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
                       ⎯
                       <input type="number" min={1} max={256} value={gradualBars} onChange={(e)=>setGradualBars(clamp(parseInt(e.target.value)||gradualBars,1,256))} className="w-14 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/>
                     </div>
