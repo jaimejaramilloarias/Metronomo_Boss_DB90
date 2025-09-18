@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { tooltipProps } from "./tooltip.jsx";
 
 /********************
  * DB-90 Inspired — PANEL EXTENDED (v4.3 Retro Minimal + Amber Theme + 7‑Segment + LED Bar + DB‑90 Labels)
@@ -98,6 +99,13 @@ const I = {
       <path d="M18 6L6 18M6 6l12 12"/>
     </svg>
   )
+};
+
+const COACH_TOOLTIPS = {
+  off: "Coach desactivado",
+  timecheck: "Time Check: mide tu precisión",
+  quiet: "Quiet Count: silencia compases",
+  gradual: "Gradual Tempo: interpola BPM",
 };
 
 /* -------------------- Self-tests -------------------- */
@@ -426,8 +434,20 @@ export default function DB90InspiredMockup() {
             <span data-tooltip="Audio" className="inline-flex items-center gap-1">{running? <I.Dot style={{color:'var(--acc)'}}/> : <I.Dot className="text-slate-500"/>}Engine</span>
             <span data-tooltip="Tempo lock" className="inline-flex items-center gap-1">{tempoLocked? <I.Lock/> : <I.Unlock/>}</span>
             <div className="inline-flex items-center gap-1" data-tooltip="Theme">
-              <button className={btn(theme==='green')} onClick={()=>setTheme('green')}>GREEN</button>
-              <button className={btn(theme==='amber')} onClick={()=>setTheme('amber')}>AMBER</button>
+              <button
+                {...tooltipProps("Tema Retro Green")}
+                className={btn(theme==='green')}
+                onClick={()=>setTheme('green')}
+              >
+                GREEN
+              </button>
+              <button
+                {...tooltipProps("Tema Retro Amber")}
+                className={btn(theme==='amber')}
+                onClick={()=>setTheme('amber')}
+              >
+                AMBER
+              </button>
             </div>
           </div>
         </div>
@@ -556,9 +576,22 @@ export default function DB90InspiredMockup() {
               <div className={`${card} p-3`}>
                 <div className={label}>ACCENTS</div>
                 <div className="mt-2 grid grid-cols-8 gap-1" data-tooltip="Acentos por beat: Off→Beat→Accent">
-                  {Array.from({length:beatsPerBar}).map((_,i)=> (
-                    <button key={i} onClick={()=>setAccentMap(m=>{ const n=m.slice(); n[i]=(n[i]+1)%3; return n; })} className={`h-8 rounded-sm border text-[11px] ${accentMap[i]===2? 'bg-black text-[color:var(--acc)] border-[color:var(--acc)]': accentMap[i]===1? 'bg-slate-800 border-slate-600 text-slate-100':'bg-slate-900 border-slate-700 text-slate-400'}`}>{i+1}</button>
-                  ))}
+                  {Array.from({length:beatsPerBar}).map((_,i)=> {
+                    const level = accentMap[i];
+                    const label = level === 2 ? `Beat ${i+1}: Accent fuerte` : level === 1 ? `Beat ${i+1}: Beat normal` : `Beat ${i+1}: sin acento`;
+                    return (
+                      <button
+                        key={i}
+                        {...tooltipProps(label)}
+                        aria-label={label}
+                        aria-pressed={level !== 0}
+                        onClick={()=>setAccentMap(m=>{ const n=m.slice(); n[i]=(n[i]+1)%3; return n; })}
+                        className={`h-8 rounded-sm border text-[11px] ${level===2? 'bg-black text-[color:var(--acc)] border-[color:var(--acc)]': level===1? 'bg-slate-800 border-slate-600 text-slate-100':'bg-slate-900 border-slate-700 text-slate-400'}`}
+                      >
+                        {i+1}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -566,7 +599,15 @@ export default function DB90InspiredMockup() {
                 <div className={label}>COACH</div>
                 <div className="mt-2 flex items-center gap-2 flex-wrap text-[12px]">
                   {['off','timecheck','quiet','gradual'].map((k)=> (
-                    <button key={k} title={k} onClick={()=>{ setCoachMode(k); if (k!=='gradual') barsElapsedRef.current=0; }} className={btn(coachMode===k)}>{k.toUpperCase()}</button>
+                    <button
+                      key={k}
+                      {...tooltipProps(COACH_TOOLTIPS[k] || `Modo ${k}`)}
+                      aria-pressed={coachMode===k}
+                      onClick={()=>{ setCoachMode(k); if (k!=='gradual') barsElapsedRef.current=0; }}
+                      className={btn(coachMode===k)}
+                    >
+                      {k.toUpperCase()}
+                    </button>
                   ))}
                   {coachMode==='quiet' && (
                     <label data-tooltip="Silenciar 1 de cada N compases" className="text-[12px] flex items-center gap-1">N<input type="number" min={2} max={8} value={muteEvery||2} onChange={(e)=>setMuteEvery(clamp(parseInt(e.target.value)||2,2,8))} className="w-12 bg-slate-900 text-slate-100 border border-slate-700 rounded-sm p-1"/></label>
@@ -604,9 +645,20 @@ export default function DB90InspiredMockup() {
                   <button data-tooltip="Limpiar" onClick={()=>setStepPattern(new Array(16).fill(0))} className={btn(false)}>Clear</button>
                 </div>
                 <div className="grid grid-cols-16 gap-1" data-tooltip="Haz clic para activar/desactivar pasos">
-                  {Array.from({length:16}).map((_,i)=> (
-                    <button key={i} onClick={()=> setStepPattern(prev=>{ const n=prev && prev.length? prev.slice(): new Array(16).fill(0); n[i]=n[i]?0:1; return n; })} className={`h-5 rounded-sm border ${ (stepPattern && stepPattern[i])? 'bg-[color:var(--acc)] border-[color:var(--acc)] text-black':'bg-slate-900 border-slate-700'}`} title={`${i+1}`}></button>
-                  ))}
+                  {Array.from({length:16}).map((_,i)=> {
+                    const isActive = !!(stepPattern && stepPattern[i]);
+                    const label = `Paso ${i+1}${isActive ? ' activo' : ' inactivo'}`;
+                    return (
+                      <button
+                        key={i}
+                        {...tooltipProps(label)}
+                        aria-label={label}
+                        aria-pressed={isActive}
+                        onClick={()=> setStepPattern(prev=>{ const n=prev && prev.length? prev.slice(): new Array(16).fill(0); n[i]=n[i]?0:1; return n; })}
+                        className={`h-5 rounded-sm border ${ isActive? 'bg-[color:var(--acc)] border-[color:var(--acc)] text-black':'bg-slate-900 border-slate-700'}`}
+                      ></button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -633,8 +685,20 @@ export default function DB90InspiredMockup() {
             <div className={`${card} p-4 min-h-[320px]`}> 
               <div className={label}>PRESETS</div>
               <div className="flex items-center gap-2 mb-2 mt-1">
-                <button onClick={()=>setActiveTab('presets')} className={btn(activeTab==='presets')}>Presets</button>
-                <button onClick={()=>setActiveTab('setlist')} className={btn(activeTab==='setlist')}>Setlist</button>
+                <button
+                  {...tooltipProps("Ver presets guardados")}
+                  onClick={()=>setActiveTab('presets')}
+                  className={btn(activeTab==='presets')}
+                >
+                  Presets
+                </button>
+                <button
+                  {...tooltipProps("Gestionar setlist en vivo")}
+                  onClick={()=>setActiveTab('setlist')}
+                  className={btn(activeTab==='setlist')}
+                >
+                  Setlist
+                </button>
               </div>
 
               {activeTab==='presets' ? (
@@ -646,9 +710,19 @@ export default function DB90InspiredMockup() {
                     <label data-tooltip="Importar JSON" className={`${btn(false)} cursor-pointer`}><I.Upload/><input type="file" accept="application/json" className="hidden" onChange={(e)=>{ const f=e.target.files && e.target.files[0]; if (f) importPresets(f); }}/></label>
                   </div>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 max-h-44 overflow-auto">
-                    {presets.map((p,i)=> (
-                      <button key={i} title={`${p.name} — ${p.bpm} BPM`} onClick={()=>loadPreset(p)} className="p-2 rounded-sm border border-slate-700 bg-slate-900 hover:bg-slate-800 text-left truncate">{p.name}</button>
-                    ))}
+                    {presets.map((p,i)=> {
+                      const tip = `${p.name} — ${p.bpm} BPM`;
+                      return (
+                        <button
+                          key={i}
+                          {...tooltipProps(tip)}
+                          onClick={()=>loadPreset(p)}
+                          className="p-2 rounded-sm border border-slate-700 bg-slate-900 hover:bg-slate-800 text-left truncate"
+                        >
+                          {p.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -658,15 +732,20 @@ export default function DB90InspiredMockup() {
                     <button data-tooltip="Añadir a setlist" onClick={addToSetlist} className={btn(false)}><I.Plus/></button>
                   </div>
                   <ul className="max-h-44 overflow-auto divide-y divide-slate-800">
-                    {setlist.map((s,i)=> (
-                      <li key={i} className="flex items-center justify-between py-2">
-                        <div className="text-[12px] truncate" title={`${s.name} — ${s.bpm} BPM`}>{i+1}. {s.name} {s.seqEnabled ? '•SEQ' : ''}</div>
-                        <div className="flex items-center gap-2">
-                          <button data-tooltip="Cargar" onClick={()=>loadPreset(s)} className="text-[11px]">⤴︎</button>
-                          <button data-tooltip="Quitar" onClick={()=>removeFromSetlist(i)} className="text-[11px] text-red-400"><I.Close/></button>
-                        </div>
-                      </li>
-                    ))}
+                    {setlist.map((s,i)=> {
+                      const tip = `${s.name} — ${s.bpm} BPM`;
+                      return (
+                        <li key={i} className="flex items-center justify-between py-2">
+                          <div className="text-[12px] truncate" {...tooltipProps(tip)}>
+                            {i+1}. {s.name} {s.seqEnabled ? '•SEQ' : ''}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button data-tooltip="Cargar" onClick={()=>loadPreset(s)} className="text-[11px]">⤴︎</button>
+                            <button data-tooltip="Quitar" onClick={()=>removeFromSetlist(i)} className="text-[11px] text-red-400"><I.Close/></button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
