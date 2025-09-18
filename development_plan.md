@@ -69,19 +69,22 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 ---
 
 ## Épica 4 · Secuenciador PATTERN avanzado
-- **T4.1 UI de pasos**  
-  - Numerar steps (1…16).  
-  - Añadir selector de figura (negra/corchea/semicorchea) por step o multiselección.  
+- [x] **T4.1 UI de pasos**
+  - Numerar steps (1…16).
+  - Añadir selector de figura (negra/corchea/semicorchea) por step o multiselección.
   - Implementar ciclo de acento (Off → Normal → Accent) con feedback visual.
-- **T4.2 Motor de secuenciador**  
-  - Rediseñar reproducción para consumir la duración real de cada step y reproducir el patrón completo antes de loop.  
+  - ✅ UI reorganizada en tarjetas numeradas con botón cíclico Off/On/Acc y selector de figura por paso.
+- [x] **T4.2 Motor de secuenciador**
+  - Rediseñar reproducción para consumir la duración real de cada step y reproducir el patrón completo antes de loop.
   - Gestionar modos REP (sustituye) y ADD (superpone) con el metrónomo base.
-- **T4.3 Persistencia interna**  
-  - Actualizar estructura interna de patrón (`steps`, `accents`, `figures`, duración total).  
+  - ✅ El motor calcula duraciones según figura, respeta el count-in y emite eventos independientes en modos REP/ADD.
+- [x] **T4.3 Persistencia interna**
+  - Actualizar estructura interna de patrón (`steps`, `accents`, `figures`, duración total).
   - Asegurar compatibilidad con patrones existentes.
-- **T4.4 QA de sincronía**  
-  - Probar patrón con combinaciones mixtas de figuras.  
-  - Validar acentos en audio (volumen/tono).  
+  - ✅ Presets/setlist guardan `{level, figure}` y se normalizan patrones heredados en la carga.
+- **T4.4 QA de sincronía**
+  - Probar patrón con combinaciones mixtas de figuras.
+  - Validar acentos en audio (volumen/tono).
   - Cubrir edge cases (patrón vacío, loop manual, tap tempo activo).
 
 ---
