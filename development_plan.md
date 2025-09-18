@@ -82,10 +82,12 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
   - Actualizar estructura interna de patrón (`steps`, `accents`, `figures`, duración total).
   - Asegurar compatibilidad con patrones existentes.
   - ✅ Presets/setlist guardan `{level, figure}` y se normalizan patrones heredados en la carga.
-- **T4.4 QA de sincronía**
+- [x] **T4.4 QA de sincronía**
   - Probar patrón con combinaciones mixtas de figuras.
   - Validar acentos en audio (volumen/tono).
   - Cubrir edge cases (patrón vacío, loop manual, tap tempo activo).
+  - ✅ Se añadieron pruebas automatizadas (`vitest`) que validan la conversión de figuras a duraciones en el secuenciador y la
+    normalización de patrones mixtos.
 
 ---
 
@@ -105,28 +107,30 @@ La estrategia se divide en 8 épicas alineadas con los requerimientos del usuari
 
 ---
 
-## Épica 6 · Gestión de Presets
-- **T6.1 Botón eliminar**  
-  - Añadir opción de borrar preset con confirmación y actualización inmediata de `localStorage`.  
+- [x] **T6.1 Botón eliminar**
+  - Añadir opción de borrar preset con confirmación y actualización inmediata de `localStorage`.
   - Evitar eliminar presets base si aplica.
-- **T6.2 UX export/import**  
+- [x] **T6.2 UX export/import**
   - Revisar flujos actuales, mejorar mensajería y tooltips si es necesario.
-- **T6.3 QA persistencia**  
+- [x] **T6.3 QA persistencia**
   - Validar integridad tras exportar/importar y posterior borrado.
+  - ✅ Se blindó la eliminación de presets marcados como de fábrica, se añadieron confirmaciones previas al importar y se mejoró
+    el feedback con conteos de presets/setlist. Las pruebas de sanitización cubren la persistencia tras exportar/importar.
 
 ---
 
-## Épica 7 · Exportar/Importar configuración global
-- **T7.1 Serialización**  
-  - Definir objeto de estado global (BPM, modo, patrón, audio, presets, preferencias, etc.).  
-  - Crear función `exportConfig()` → descarga JSON.  
+- [x] **T7.1 Serialización**
+  - Definir objeto de estado global (BPM, modo, patrón, audio, presets, preferencias, etc.).
+  - Crear función `exportConfig()` → descarga JSON.
   - Crear `importConfig(file)` → parse, validar y aplicar.
-- **T7.2 UI y feedback**  
-  - Botones dedicados con tooltips, confirmación para sobrescribir estado actual.  
+- [x] **T7.2 UI y feedback**
+  - Botones dedicados con tooltips, confirmación para sobrescribir estado actual.
   - Mensajes de éxito/error claros.
-- **T7.3 Compatibilidad**  
-  - Garantizar que export/import global no corrompa patrones/presets existentes.  
+- [x] **T7.3 Compatibilidad**
+  - Garantizar que export/import global no corrompa patrones/presets existentes.
   - Manejar versiones futuras mediante `version` en JSON.
+  - ✅ El flujo ahora valida versiones antes de importar, solicita confirmación y reporta conteos de presets/setlist/patrones re
+    cargados. Las pruebas unitarias aseguran que el `sanitizeConfigState` normaliza estados legados.
 
 ---
 

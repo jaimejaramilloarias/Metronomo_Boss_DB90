@@ -20,7 +20,7 @@ const BPM_MAX = 250;
 const PATTERN_STEP_COUNT = 16;
 const PRESET_STORAGE_KEY = "db90_presets_v3";
 const SETLIST_STORAGE_KEY = "db90_setlist";
-const GLOBAL_CONFIG_VERSION = 1;
+export const GLOBAL_CONFIG_VERSION = 1;
 const VALID_SEQ_MODES = new Set(["replace", "add"]);
 const VALID_THEMES = new Set(["green", "amber"]);
 const VALID_STEPS_PER_BEAT = [1, 2, 3, 4];
@@ -60,8 +60,8 @@ const normalizePatternStep = (raw) => {
   }
   return { level: 0, figure: "sixteenth" };
 };
-const createEmptyPattern = () => Array.from({ length: PATTERN_STEP_COUNT }, () => ({ level: 0, figure: "sixteenth" }));
-const normalizePatternSteps = (rawSteps) => {
+export const createEmptyPattern = () => Array.from({ length: PATTERN_STEP_COUNT }, () => ({ level: 0, figure: "sixteenth" }));
+export const normalizePatternSteps = (rawSteps) => {
   const base = createEmptyPattern();
   if (!Array.isArray(rawSteps)) return base;
   const max = Math.min(rawSteps.length, PATTERN_STEP_COUNT);
@@ -70,7 +70,7 @@ const normalizePatternSteps = (rawSteps) => {
   }
   return base;
 };
-const sanitizePatternSteps = (rawSteps) =>
+export const sanitizePatternSteps = (rawSteps) =>
   normalizePatternSteps(Array.isArray(rawSteps) ? rawSteps : []).map((step) => ({
     level: clamp(Number(step.level) || 0, 0, 2),
     figure: FIGURE_BEATS[step.figure] ? step.figure : "sixteenth",
@@ -114,7 +114,7 @@ const createPatternId = (existingIds = new Set()) => {
   } while (existingIds.has(id));
   return id;
 };
-const deserializeStoredPatterns = (raw) => {
+export const deserializeStoredPatterns = (raw) => {
   const list = Array.isArray(raw?.patterns) ? raw.patterns : Array.isArray(raw) ? raw : [];
   const seen = new Set();
   const out = [];
@@ -152,7 +152,7 @@ const loadStoredUserPatterns = () => {
   }
   return [];
 };
-const patternStepsToSchedule = (steps, stepsPerBeat) => {
+export const patternStepsToSchedule = (steps, stepsPerBeat) => {
   if (!Array.isArray(steps) || steps.length === 0) return [];
   const subdivisionsPerBeat = Math.max(1, stepsPerBeat);
   return steps.map((step) => {
@@ -357,7 +357,7 @@ const resolveByType = (value, type) => {
   return undefined;
 };
 
-const sanitizePresetEntry = (raw, index = 0) => {
+export const sanitizePresetEntry = (raw, index = 0) => {
   const base = raw && typeof raw === "object" ? raw : {};
   const name = typeof base.name === "string" && base.name.trim() ? base.name.trim() : `Preset ${index + 1}`;
   const bpm = clamp(Number.parseInt(base.bpm, 10) || 120, BPM_MIN, BPM_MAX);
@@ -408,15 +408,16 @@ const sanitizePresetEntry = (raw, index = 0) => {
     seqMode,
     seqEnabled,
     theme,
+    readonly: !!base.readonly,
   };
 };
 
-const sanitizePresetCollection = (raw) => {
+export const sanitizePresetCollection = (raw) => {
   if (!Array.isArray(raw)) return [];
   return raw.map((entry, index) => sanitizePresetEntry(entry, index));
 };
 
-const sanitizeSetlistEntry = (raw, index = 0) => {
+export const sanitizeSetlistEntry = (raw, index = 0) => {
   const base = raw && typeof raw === "object" ? raw : {};
   const presetLike = sanitizePresetEntry(
     {
@@ -438,12 +439,12 @@ const sanitizeSetlistEntry = (raw, index = 0) => {
   };
 };
 
-const sanitizeSetlistCollection = (raw) => {
+export const sanitizeSetlistCollection = (raw) => {
   if (!Array.isArray(raw)) return [];
   return raw.map((entry, index) => sanitizeSetlistEntry(entry, index));
 };
 
-const serializeUserPatterns = (rawList) => {
+export const serializeUserPatterns = (rawList) => {
   if (!Array.isArray(rawList)) return [];
   const seen = new Set();
   return rawList.map((entry, index) => {
@@ -464,7 +465,7 @@ const serializeUserPatterns = (rawList) => {
   });
 };
 
-const sanitizeConfigState = (rawState = {}) => {
+export const sanitizeConfigState = (rawState = {}) => {
   const bpm = clamp(Number.parseInt(rawState.bpm, 10) || 120, BPM_MIN, BPM_MAX);
   const beatsPerBar = clamp(Number.parseInt(rawState.beatsPerBar, 10) || 4, 1, 16);
   const stepsRaw = Number.parseInt(rawState.stepsPerBeat, 10);
@@ -1155,21 +1156,34 @@ export default function DB90InspiredMockup() {
       a.download = 'db90-presets.json';
       a.click();
       URL.revokeObjectURL(url);
-      showPresetFeedback('Presets exportados (JSON).', 'success');
+      showPresetFeedback('Presets y setlist exportados (JSON).', 'success');
     } catch (error) {
       console.error('exportPresets', error);
       showPresetFeedback('No se pudo exportar los presets.', 'error');
     }
   };
   const importPresetsFromFile = async (file) => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Importar reemplazará tus presets y setlist actuales. ¿Quieres continuar?');
+      if (!confirmed) {
+        showPresetFeedback('Importación cancelada.', 'info');
+        return;
+      }
+    }
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+      const version = Number.parseInt(data?.version, 10);
+      if (Number.isFinite(version) && version > GLOBAL_CONFIG_VERSION) {
+        showPresetFeedback('El archivo corresponde a una versión más reciente. Actualiza antes de importar.', 'error');
+        return;
+      }
       const importedPresets = sanitizePresetCollection(data?.presets ?? data ?? []);
       const importedSetlist = sanitizeSetlistCollection(data?.setlist ?? []);
       setPresets(importedPresets);
       setSetlist(importedSetlist);
-      showPresetFeedback(`Importados ${importedPresets.length} presets.`, 'success');
+      setPresetName('');
+      showPresetFeedback(`Importados ${importedPresets.length} presets y ${importedSetlist.length} temas de setlist.`, 'success');
     } catch (error) {
       console.error('importPresets', error);
       showPresetFeedback('No se pudieron importar los presets.', 'error');
@@ -1227,6 +1241,10 @@ export default function DB90InspiredMockup() {
   const deletePreset = (index) => {
     if (index < 0 || index >= presets.length) return;
     const target = presets[index];
+    if (target && target.readonly) {
+      showPresetFeedback('Este preset base no puede eliminarse.', 'info');
+      return;
+    }
     const label = target && typeof target.name === 'string' && target.name.trim()
       ? target.name.trim()
       : `Preset ${index + 1}`;
@@ -1320,9 +1338,21 @@ export default function DB90InspiredMockup() {
   };
 
   const importGlobalConfigFromFile = async (file) => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Importar configuración reemplazará el estado actual. ¿Quieres continuar?');
+      if (!confirmed) {
+        showConfigFeedback('Importación cancelada.', 'info');
+        return;
+      }
+    }
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+      const version = Number.parseInt(data?.version ?? data?.state?.version, 10);
+      if (Number.isFinite(version) && version > GLOBAL_CONFIG_VERSION) {
+        showConfigFeedback('El archivo pertenece a una versión más reciente. Actualiza la app antes de importarlo.', 'error');
+        return;
+      }
       const state = sanitizeConfigState(data?.state ?? data ?? {});
       const importedPresets = sanitizePresetCollection(data?.presets ?? []);
       const importedSetlist = sanitizeSetlistCollection(data?.setlist ?? []);
@@ -1331,7 +1361,7 @@ export default function DB90InspiredMockup() {
       setPresets(importedPresets);
       setSetlist(importedSetlist);
       setUserPatterns(importedUserPatterns);
-      showConfigFeedback('Configuración importada correctamente.', 'success');
+      showConfigFeedback(`Configuración importada (${importedPresets.length} presets, ${importedSetlist.length} setlist, ${importedUserPatterns.length} patrones).`, 'success');
     } catch (error) {
       console.error('importConfig', error);
       showConfigFeedback('No se pudo importar la configuración.', 'error');
